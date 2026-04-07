@@ -1,0 +1,87 @@
+ghafra-backend/
+├── src/
+│   ├── config/
+│   │   ├── supabase.ts          ← Supabase admin client
+│   │   ├── firebase.ts          ← FCM admin SDK init
+│   │   ├── resend.ts            ← Resend client init
+│   │   └── env.ts               ← Zod-validated env vars
+│   │
+│   ├── modules/
+│   │   ├── auth/
+│   │   │   ├── auth.router.ts
+│   │   │   ├── auth.controller.ts
+│   │   │   ├── auth.service.ts
+│   │   │   └── auth.schema.ts   ← Zod request schemas
+│   │   │
+│   │   ├── members/
+│   │   │   ├── members.router.ts
+│   │   │   ├── members.controller.ts
+│   │   │   ├── members.service.ts
+│   │   │   └── members.schema.ts
+│   │   │
+│   │   ├── dues/
+│   │   │   ├── dues.router.ts
+│   │   │   ├── dues.controller.ts
+│   │   │   ├── dues.service.ts
+│   │   │   └── dues.schema.ts
+│   │   │
+│   │   ├── donations/
+│   │   │   ├── donations.router.ts
+│   │   │   ├── donations.controller.ts
+│   │   │   ├── donations.service.ts
+│   │   │   └── donations.schema.ts
+│   │   │
+│   │   ├── announcements/
+│   │   │   ├── announcements.router.ts
+│   │   │   ├── announcements.controller.ts
+│   │   │   ├── announcements.service.ts
+│   │   │   └── announcements.schema.ts
+│   │   │
+│   │   ├── notifications/
+│   │   │   ├── notifications.router.ts
+│   │   │   ├── notifications.controller.ts
+│   │   │   ├── notifications.service.ts  ← FCM logic
+│   │   │   └── notifications.schema.ts
+│   │   │
+│   │   ├── transactions/
+│   │   │   ├── transactions.router.ts
+│   │   │   ├── transactions.controller.ts
+│   │   │   └── transactions.service.ts
+│   │   │
+│   │   └── mail/
+│   │       ├── mail.service.ts           ← Resend logic
+│   │       └── templates/
+│   │           ├── welcome.tsx           ← React Email templates
+│   │           ├── dues-receipt.tsx
+│   │           ├── donation-receipt.tsx
+│   │           └── announcement.tsx
+│   │
+│   ├── middleware/
+│   │   ├── auth.middleware.ts    ← Verify Supabase JWT
+│   │   ├── role.middleware.ts    ← Admin / member guard
+│   │   └── error.middleware.ts   ← Global error handler
+│   │
+│   ├── shared/
+│   │   ├── types.ts              ← Shared TS interfaces
+│   │   ├── errors.ts             ← AppError class
+│   │   └── response.ts           ← Standard API response shape
+│   │
+│   ├── jobs/
+│   │   ├── dues-reminder.job.ts  ← Cron: remind before month end
+│   │   └── index.ts              ← Register all cron jobs
+│   │
+│   └── app.ts                    ← Express app setup
+│
+├── supabase/
+│   ├── migrations/
+│   │   ├── 001_profiles.sql
+│   │   ├── 002_dues.sql
+│   │   ├── 003_donations.sql
+│   │   ├── 004_announcements.sql
+│   │   ├── 005_notifications.sql
+│   │   └── 006_fcm_tokens.sql
+│   └── seed.sql
+│
+├── .env.example
+├── package.json
+└── tsconfig.json
