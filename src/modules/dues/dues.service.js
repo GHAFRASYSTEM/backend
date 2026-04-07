@@ -1,24 +1,24 @@
 import Stripe from 'stripe';
-import { supabase }            from '../../config/supabase';
-import { mailService }         from '../mail/mail.service';
+import { supabase } from '../../config/supabase';
+import { mailService } from '../mail/mail.service';
 import { notificationService } from '../notifications/notifications.service';
-import { Errors }              from '../../shared/errors';
-import { env }                 from '../../config/env';
+import { Errors } from '../../shared/errors';
+import { env } from '../../config/env';
 
 const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
-  apiVersion: '2024-12-18.acacia',
+  apiVersion: '2024-12-18',
 });
 
 const DUES_AMOUNT_CENTS = 1000; // €10.00
-const DUES_CURRENCY     = 'eur';
+const DUES_CURRENCY = 'eur';
 
 export const duesService = {
 
-  // ── Check if user has paid this month ──────────────────────────────────
-  async getStatus(userId: string) {
-    const now   = new Date();
+  // ── Check if user has paid this month ───────────────────────────────
+  async getStatus(userId) {
+    const now = new Date();
     const month = now.getMonth() + 1;
-    const year  = now.getFullYear();
+    const year = now.getFullYear();
 
     const { data } = await supabase
       .from('dues_payments')
@@ -31,33 +31,33 @@ export const duesService = {
     const monthName = now.toLocaleString('en-GB', { month: 'long' });
 
     return {
-      paid:     !!data,
-      payment:  data ?? null,
+      paid: !!data,
+      payment: data ?? null,
       month,
       year,
-      label:    `${monthName} Dues ${year}`,
-      amount:   DUES_AMOUNT_CENTS / 100,
+      label: `${monthName} Dues ${year}`,
+      amount: DUES_AMOUNT_CENTS / 100,
       currency: DUES_CURRENCY.toUpperCase(),
     };
   },
 
-  // ── Get payment history ─────────────────────────────────────────────────
-  async getHistory(userId: string) {
+  // ── Get payment history ─────────────────────────────────────────────
+  async getHistory(userId) {
     const { data } = await supabase
       .from('dues_payments')
       .select('*')
       .eq('user_id', userId)
-      .order('year',  { ascending: false })
+      .order('year', { ascending: false })
       .order('month', { ascending: false });
 
     return data ?? [];
   },
 
-  // ── Step 1: Create PaymentIntent → return client_secret to frontend ─────
-  async createPaymentIntent(userId: string) {
-    const now   = new Date();
+  // ── Create PaymentIntent ────────────────────────────────────────────
+  async createPaymentIntent(userId) {
+    const now = new Date();
     const month = now.getMonth() + 1;
-    const year  = now.getFullYear();
+    const year = now.getFullYear();
 
     const { data: existing } = await supabase
       .from('dues_payments')
@@ -80,48 +80,44 @@ export const duesService = {
     const monthName = now.toLocaleString('en-GB', { month: 'long' });
 
     const intent = await stripe.paymentIntents.create({
-      amount:   DUES_AMOUNT_CENTS,
+      amount: DUES_AMOUNT_CENTS,
       currency: DUES_CURRENCY,
       metadata: {
         user_id: userId,
-        email:   profile.email,
-        name:    profile.name,
-        month:   String(month),
-        year:    String(year),
-        type:    'dues',
-        label:   `${monthName} Dues ${year}`,
+        email: profile.email,
+        name: profile.name,
+        month: String(month),
+        year: String(year),
+        type: 'dues',
+        label: `${monthName} Dues ${year}`,
       },
-      description:   `GHAFRA ${monthName} ${year} Dues — ${profile.name}`,
+      description: `GHAFRA ${monthName} ${year} Dues — ${profile.name}`,
       receipt_email: profile.email,
     });
 
     return {
-      client_secret:     intent.client_secret,
+      client_secret: intent.client_secret,
       payment_intent_id: intent.id,
-      amount:            DUES_AMOUNT_CENTS / 100,
-      currency:          DUES_CURRENCY.toUpperCase(),
-      label:             `${monthName} Dues ${year}`,
+      amount: DUES_AMOUNT_CENTS / 100,
+      currency: DUES_CURRENCY.toUpperCase(),
+      label: `${monthName} Dues ${year}`,
     };
   },
 
-  // ── Step 2: Verify and record after frontend confirms ───────────────────
-  async confirmPayment(userId: string, paymentIntentId: string, method: string) {
+  // ── Confirm Payment ─────────────────────────────────────────────────
+  async confirmPayment(userId, paymentIntentId, method) {
     const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
-
-    console.log('[dues] intent status:', intent.status);
-    console.log('[dues] intent metadata:', intent.metadata);
 
     if (intent.status !== 'succeeded') {
       throw Errors.badRequest(`Payment not completed. Status: ${intent.status}`);
     }
 
     if (intent.metadata.user_id !== userId) {
-      console.error('[dues] user mismatch:', intent.metadata.user_id, '!==', userId);
       throw Errors.forbidden();
     }
 
     const month = parseInt(intent.metadata.month);
-    const year  = parseInt(intent.metadata.year);
+    const year = parseInt(intent.metadata.year);
 
     const { data: duplicate, error: checkError } = await supabase
       .from('dues_payments')
@@ -137,13 +133,13 @@ export const duesService = {
     const { data: payment, error: insertError } = await supabase
       .from('dues_payments')
       .insert({
-        user_id:                  userId,
+        user_id: userId,
         month,
         year,
-        amount:                   intent.amount / 100,
-        currency:                 intent.currency.toUpperCase(),
+        amount: intent.amount / 100,
+        currency: intent.currency.toUpperCase(),
         method,
-        status:                   'completed',
+        status: 'completed',
         stripe_payment_intent_id: intent.id,
       })
       .select()
@@ -158,21 +154,21 @@ export const duesService = {
       .single();
 
     if (profile) {
-      const now       = new Date(intent.created * 1000);
+      const now = new Date(intent.created * 1000);
       const monthName = now.toLocaleString('en-GB', { month: 'long' });
 
       await Promise.allSettled([
         mailService.sendDuesReceipt({
-          name:     profile.name,
-          email:    profile.email,
-          month:    monthName,
+          name: profile.name,
+          email: profile.email,
+          month: monthName,
           year,
-          amount:   intent.amount / 100,
+          amount: intent.amount / 100,
           currency: intent.currency.toUpperCase(),
         }),
         notificationService.sendToUser(userId, {
           title: '✅ Payment confirmed',
-          body:  `Your ${monthName} ${year} dues of €${intent.amount / 100} have been received!`,
+          body: `Your ${monthName} ${year} dues of €${intent.amount / 100} have been received!`,
         }),
       ]);
     }
@@ -180,33 +176,35 @@ export const duesService = {
     return payment;
   },
 
-  // ── Stripe webhook handler ───────────────────────────────────────────────
-  async handleWebhook(rawBody: Buffer, signature: string) {
-    let event: Stripe.Event;
+  // ── Stripe Webhook ─────────────────────────────────────────────────
+  async handleWebhook(rawBody, signature) {
+    let event;
 
     try {
       event = stripe.webhooks.constructEvent(
         rawBody,
         signature,
-        env.STRIPE_WEBHOOK_SECRET,
+        env.STRIPE_WEBHOOK_SECRET
       );
-    } catch (err: any) {
+    } catch (err) {
       throw Errors.badRequest(`Webhook signature failed: ${err.message}`);
     }
 
     switch (event.type) {
       case 'payment_intent.succeeded': {
-        const intent = event.data.object as Stripe.PaymentIntent;
-        if (intent.metadata.type === 'dues') {
+        const intent = event.data.object;
+        if (intent.metadata?.type === 'dues') {
           console.log(`✅ Webhook: dues paid — ${intent.metadata.email}`);
         }
         break;
       }
+
       case 'payment_intent.payment_failed': {
-        const intent = event.data.object as Stripe.PaymentIntent;
-        console.error(`❌ Webhook: payment failed — ${intent.metadata.email}`);
+        const intent = event.data.object;
+        console.error(`❌ Webhook: payment failed — ${intent.metadata?.email}`);
         break;
       }
+
       default:
         console.log(`Unhandled webhook event: ${event.type}`);
     }
