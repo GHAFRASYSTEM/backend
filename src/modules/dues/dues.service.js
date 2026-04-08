@@ -5,9 +5,7 @@ import { notificationService } from '../notifications/notifications.service';
 import { Errors } from '../../shared/errors';
 import { env } from '../../config/env';
 
-const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
-  apiVersion: '2024-12-18',
-});
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
 
 const DUES_AMOUNT_CENTS = 1000; // €10.00
 const DUES_CURRENCY = 'eur';
