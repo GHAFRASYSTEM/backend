@@ -6,7 +6,8 @@ import { env }            from './config/env';
 import authRouter         from './modules/auth/auth.router';
 import duesRouter         from './modules/dues/dues.router';
 import transactionsRouter from './modules/transactions/transactions.router';
-import announcementsRouter from './modules/announcements/announcements.router'; // ← add
+import announcementsRouter from './modules/announcements/announcements.router';
+import membersRouter from './modules/members/members.router';
 import { errorHandler }   from './middleware/error.middleware';
 
 const app = express();
@@ -21,7 +22,8 @@ app.use('/dues/webhook', express.raw({ type: 'application/json' }));
 app.use('/auth',          authRouter);
 app.use('/dues',          duesRouter);
 app.use('/transactions',  transactionsRouter);
-app.use('/announcements', announcementsRouter);   // ← add
+app.use('/announcements', announcementsRouter);
+app.use('/members', membersRouter);
 
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
