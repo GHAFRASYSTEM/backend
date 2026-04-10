@@ -7,6 +7,7 @@ import authRouter         from './modules/auth/auth.router';
 import duesRouter         from './modules/dues/dues.router';
 import transactionsRouter from './modules/transactions/transactions.router';
 import announcementsRouter from './modules/announcements/announcements.router';
+import housingRouter from './modules/housing/housing.router';
 import membersRouter from './modules/members/members.router';
 import { errorHandler }   from './middleware/error.middleware';
 
@@ -24,6 +25,7 @@ app.use('/dues',          duesRouter);
 app.use('/transactions',  transactionsRouter);
 app.use('/announcements', announcementsRouter);
 app.use('/members', membersRouter);
+app.use('/housing', housingRouter);
 
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
