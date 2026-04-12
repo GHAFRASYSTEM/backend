@@ -4,6 +4,7 @@ import { mailService } from '../mail/mail.service';
 import { notificationService } from '../notifications/notifications.service';
 import { Errors } from '../../shared/errors';
 import { env } from '../../config/env';
+import crypto from 'crypto';
 
 const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
   apiVersion: '2026-03-25.dahlia',
