@@ -3,6 +3,32 @@ import { Errors }   from '../../shared/errors';
 import { notificationService } from '../notifications/notifications.service';
 import type { ListMembersInput, UpdateMemberInput } from './members.schema';
 
+async function uploadMemberAvatar(memberId: string, base64: string): Promise<string> {
+  const isJpeg  = base64.startsWith('/9j/')
+  const ext      = isJpeg ? 'jpg' : 'png'
+  const mimeType = isJpeg ? 'image/jpeg' : 'image/png'
+  const path     = `${memberId}/avatar.${ext}`
+  const buffer   = Buffer.from(base64, 'base64')
+
+  // Remove any previous avatar (all extensions) before uploading the new one
+  await supabase.storage
+    .from('avatars')
+    .remove([`${memberId}/avatar.jpg`, `${memberId}/avatar.png`, `${memberId}/avatar.webp`])
+    .catch(() => {}) // non-fatal — files may not exist yet
+
+  const { error } = await supabase.storage
+    .from('avatars')
+    .upload(path, buffer, {
+      contentType: mimeType,
+      upsert:      true,
+    })
+
+  if (error) throw error
+
+  const { data } = supabase.storage.from('avatars').getPublicUrl(path)
+  return `${data.publicUrl}?t=${Date.now()}`
+}
+
 export const membersService = {
 
   // ── List members with filtering + pagination ──────────────────────────
@@ -81,31 +107,40 @@ export const membersService = {
   },
 
   // ── Update any member field ───────────────────────────────────────────
-  async updateMember(memberId: string, input: UpdateMemberInput) {
+  async updateMember(memberId: string, input: UpdateMemberInput & { photo_url?: string }) {
     const { data: existing } = await supabase
       .from('profiles')
       .select('id, name, email, is_verified')
       .eq('id', memberId)
-      .single();
+      .single()
 
-    if (!existing) throw Errors.notFound('Member');
+    if (!existing) throw Errors.notFound('Member')
+
+    // If photo_url looks like a base64 payload (no 'https://'), upload it
+    let resolvedPhotoUrl = input.photo_url
+    if (resolvedPhotoUrl && !resolvedPhotoUrl.startsWith('http')) {
+      resolvedPhotoUrl = await uploadMemberAvatar(memberId, resolvedPhotoUrl)
+    }
+
+    const { photo_url: _raw, ...rest } = input
 
     const { data, error } = await supabase
       .from('profiles')
       .update({
-        ...input,
+        ...rest,
+        ...(resolvedPhotoUrl ? { photo_url: resolvedPhotoUrl } : {}),
         updated_at: new Date().toISOString(),
       })
       .eq('id', memberId)
       .select()
-      .single();
+      .single()
 
     if (error) {
-      console.error('[members] updateMember error:', error);
-      throw error;
+      console.error('[members] updateMember error:', error)
+      throw error
     }
 
-    return data;
+    return data
   },
 
   // ── Toggle verified status ────────────────────────────────────────────
