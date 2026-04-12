@@ -1,11 +1,11 @@
 import type { Request, Response, NextFunction } from 'express';
-import { ZodError }      from 'zod';
-import { duesService }   from './dues.service';
+import { ZodError }    from 'zod';
+import { duesService } from './dues.service';
 import {
   CreatePaymentIntentSchema,
   ConfirmPaymentSchema,
 } from './dues.schema';
-import { ok, created }   from '../../shared/response';
+import { ok, created } from '../../shared/response';
 
 export const duesController = {
 
@@ -28,20 +28,41 @@ export const duesController = {
   // POST /dues/create-payment-intent
   async createPaymentIntent(req: Request, res: Response, next: NextFunction) {
     try {
-      const result = await duesService.createPaymentIntent(req.user!.id);
+      const { type, amount } = CreatePaymentIntentSchema.parse(req.body);
+
+      // Convert euros → cents for donations
+      const amountCents = amount ? Math.round(amount * 100) : undefined;
+
+      const result = await duesService.createPaymentIntent(
+        req.user!.id,
+        type,
+        amountCents,
+      );
       return created(res, result);
-    } catch (err) { next(err); }
+    } catch (err) {
+      if (err instanceof ZodError) {
+        return res.status(422).json({
+          success: false,
+          error: {
+            message: 'Validation failed',
+            code:    'VALIDATION_ERROR',
+            issues:  err.issues.map(i => ({ field: i.path.join('.'), message: i.message })),
+          },
+        });
+      }
+      next(err);
+    }
   },
 
   // POST /dues/confirm
   async confirmPayment(req: Request, res: Response, next: NextFunction) {
     try {
       console.log('📥 /dues/confirm body:', JSON.stringify(req.body, null, 2));
-      const { payment_intent_id, method } = ConfirmPaymentSchema.parse(req.body);
+      const { payment_intent_id, type } = ConfirmPaymentSchema.parse(req.body);
       const result = await duesService.confirmPayment(
         req.user!.id,
         payment_intent_id,
-        method,
+        type,
       );
       return ok(res, result);
     } catch (err) {

@@ -1,37 +1,36 @@
 import { supabase } from '../../config/supabase';
-import { Errors } from '../../shared/errors';
-import type { CreateDuesPaymentInput } from './transactions.schema';
+import { Errors }   from '../../shared/errors';
 
 type Filters = {
   month?: number;
-  year?: number;
+  year?:  number;
+  type?:  'dues' | 'donation';
 };
 
 export const transactionsService = {
 
+  // ── Get all payments for user (optionally filtered by type) ─────────────
+  async getUserPayments(userId: string, filters: Filters = {}) {
+    let query = supabase
+      .from('payments')
+      .select('*')
+      .eq('user_id', userId);
 
-  // ── Get all payments for user ──────────────────────────────────
-async getUserPayments(userId: string, filters: Filters = {}) {
-  let query = supabase
-    .from('dues_payments')
-    .select('*')
-    .eq('user_id', userId);
+    if (filters.type)  query = query.eq('type',  filters.type);
+    if (filters.month) query = query.eq('month', filters.month);
+    if (filters.year)  query = query.eq('year',  filters.year);
 
-  if (filters.month) query = query.eq('month', filters.month);
-  if (filters.year)  query = query.eq('year', filters.year);
+    const { data, error } = await query
+      .order('created_at', { ascending: false });
 
-  const { data, error } = await query
-    .order('year', { ascending: false })
-    .order('month', { ascending: false });
+    if (error) throw error;
+    return data;
+  },
 
-  if (error) throw error;
-  return data;
-},
-
-  // ── Get single payment ─────────────────────────────────────────
+  // ── Get single payment by ID (must belong to user) ──────────────────────
   async getPaymentById(userId: string, id: string) {
     const { data, error } = await supabase
-      .from('dues_payments')
+      .from('payments')
       .select('*')
       .eq('id', id)
       .eq('user_id', userId)
@@ -41,10 +40,10 @@ async getUserPayments(userId: string, filters: Filters = {}) {
     return data;
   },
 
-    // ── Admin: Get all payments with optional month/year filter ─────────────────
-    async getAllPayments(filters: Filters) {
+  // ── Admin: Get all payments with optional filters ───────────────────────
+  async getAllPayments(filters: Filters) {
     let query = supabase
-      .from('dues_payments')
+      .from('payments')
       .select(`
         *,
         profiles (
@@ -55,8 +54,9 @@ async getUserPayments(userId: string, filters: Filters = {}) {
         )
       `);
 
+    if (filters.type)  query = query.eq('type',  filters.type);
     if (filters.month) query = query.eq('month', filters.month);
-    if (filters.year)  query = query.eq('year', filters.year);
+    if (filters.year)  query = query.eq('year',  filters.year);
 
     const { data, error } = await query
       .order('created_at', { ascending: false });
