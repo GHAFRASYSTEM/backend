@@ -21,6 +21,9 @@ const schema = z.object({
   // Stripe
   STRIPE_SECRET_KEY:     z.string().min(1),
   STRIPE_WEBHOOK_SECRET: z.string().min(1),
+
+  //Card authentication
+   CARD_SECRET:           z.string().min(1),
 });
 
 const parsed = schema.safeParse(process.env);
