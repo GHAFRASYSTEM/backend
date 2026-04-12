@@ -97,4 +97,11 @@ export const duesController = {
     return ok(res, result);
   } catch (err) { next(err); }
 },
+
+async getVerifyCode(req: Request, res: Response, next: NextFunction) {
+  try {
+    const code = await duesService.getVerifyCode(req.user!.id);
+    return ok(res, { code }); // null if dues not paid
+  } catch (err) { next(err); }
+},
 };

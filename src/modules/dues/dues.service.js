@@ -325,4 +325,34 @@ export const duesService = {
 
   return { valid: false };
 },
+
+
+async getVerifyCode(userId ) {
+  const now   = new Date();
+  const month = now.getMonth() + 1;
+  const year  = now.getFullYear();
+
+  // Only generate a code if dues are paid this month
+  const { data } = await supabase
+    .from('payments')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('type', 'dues')
+    .eq('month', month)
+    .eq('year', year)
+    .eq('status', 'completed')
+    .single();
+
+  if (!data) return null;
+
+  const code = crypto
+    .createHmac('sha256', env.CARD_SECRET)
+    .update(`${userId}-${month}-${year}`)
+    .digest('hex')
+    .slice(0, 8)
+    .toUpperCase();
+
+  // Format as "A3F9 B21C" for readability
+  return `${code.slice(0, 4)} ${code.slice(4)}`;
+},
 };
