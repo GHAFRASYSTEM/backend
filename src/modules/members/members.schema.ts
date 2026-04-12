@@ -41,6 +41,7 @@ export const UpdateMemberSchema = z.object({
   is_verified:  z.boolean().optional(),
   is_complete:  z.boolean().optional(),
   member_since: z.string().optional(),           // ISO date string
+  photo_url:    z.string().optional().nullable(), 
 });
 
 export const ToggleVerifySchema = z.object({

@@ -52,29 +52,36 @@ export const membersController = {
   },
 
   // PATCH /members/:id
-  async update(req: Request, res: Response, next: NextFunction) {
-    try {
-      console.log('[members] update body:', JSON.stringify(req.body, null, 2));
-      const input  = UpdateMemberSchema.parse(req.body);
-      const member = await membersService.updateMember(req.params.id as string, input);
-      return ok(res, member);
-    } catch (err) {
-      if (err instanceof ZodError) {
-        return res.status(422).json({
-          success: false,
-          error: {
-            message: 'Validation failed',
-            code:    'VALIDATION_ERROR',
-            issues:  err.issues.map(i => ({
-              field:   i.path.join('.'),
-              message: i.message,
-            })),
-          },
-        });
-      }
-      next(err);
+async update(req: Request, res: Response, next: NextFunction) {
+  try {
+    console.log('[members] update body keys:', Object.keys(req.body));
+
+    // Extract photo_url before Zod parsing (it's base64, not a URL yet)
+    const { photo_url, ...rest } = req.body
+
+    const input  = UpdateMemberSchema.parse(rest)
+    const member = await membersService.updateMember(
+      req.params.id as string,
+      { ...input, ...(photo_url !== undefined ? { photo_url } : {}) }
+    )
+    return ok(res, member)
+  } catch (err) {
+    if (err instanceof ZodError) {
+      return res.status(422).json({
+        success: false,
+        error: {
+          message: 'Validation failed',
+          code:    'VALIDATION_ERROR',
+          issues:  err.issues.map(i => ({
+            field:   i.path.join('.'),
+            message: i.message,
+          })),
+        },
+      })
     }
-  },
+    next(err)
+  }
+},
 
   // PATCH /members/:id/verify
   async toggleVerify(req: Request, res: Response, next: NextFunction) {
