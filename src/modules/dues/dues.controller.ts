@@ -88,4 +88,13 @@ export const duesController = {
       return ok(res, result);
     } catch (err) { next(err); }
   },
+
+  // verify user's code
+  async verifyCode(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { code } = req.params;
+    const result   = await duesService.verifyCode(code);
+    return ok(res, result);
+  } catch (err) { next(err); }
+},
 };

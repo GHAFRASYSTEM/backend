@@ -281,4 +281,48 @@ export const duesService = {
 
     return { received: true };
   },
+
+  async verifyCode(code) {
+  const now   = new Date();
+  const month = now.getMonth() + 1;
+  const year  = now.getFullYear();
+
+  // Reconstruct every possible code for this month and compare
+  const { data: payments } = await supabase
+    .from('payments')
+    .select('user_id, month, year')
+    .eq('type', 'dues')
+    .eq('month', month)
+    .eq('year', year)
+    .eq('status', 'completed');
+
+  if (!payments?.length) return { valid: false };
+
+  for (const payment of payments) {
+    const expected = crypto
+      .createHmac('sha256', env.CARD_SECRET)
+      .update(`${payment.user_id}-${payment.month}-${payment.year}`)
+      .digest('hex')
+      .slice(0, 8)
+      .toUpperCase();
+
+    if (expected === code.toUpperCase().replace(/\s/g, '')) {
+      // Fetch the member's name to show the verifier
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('name, photo_url, city, member_type')
+        .eq('id', payment.user_id)
+        .single();
+
+      return {
+        valid:  true,
+        month,
+        year,
+        member: profile ?? null,
+      };
+    }
+  }
+
+  return { valid: false };
+},
 };

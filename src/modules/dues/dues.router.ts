@@ -6,6 +6,7 @@ const router = Router();
 
 // ── Stripe webhook — raw body, no auth ──────────────────────────────────
 router.post('/webhook', duesController.webhook);
+router.post('/verify/:code',duesController.verifyCode)
 
 // ── Protected routes ─────────────────────────────────────────────────────
 router.use(requireAuth);
