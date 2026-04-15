@@ -33,7 +33,27 @@ export const FcmTokenSchema = z.object({
 export const DeleteFcmTokenSchema = z.object({
   token: z.string().min(1),
 });
+export const AppleSignInSchema = z.object({
+  identity_token: z.string().min(1),   // Apple's JWT
+  device_token:   z.string().optional(),
+  platform:       z.enum(['ios', 'android']).optional(),
+});
 
+export const EmailSignInSchema = z.object({
+  email:        z.string().email(),
+  password:     z.string().min(8),
+  device_token: z.string().optional(),
+  platform:     z.enum(['ios', 'android']).optional(),
+});
+
+export const EmailSignUpSchema = z.object({
+  email:    z.string().email(),
+  password: z.string().min(8),
+});
+
+export type EmailSignInInput = z.infer<typeof EmailSignInSchema>;
+export type EmailSignUpInput = z.infer<typeof EmailSignUpSchema>;
+export type AppleSignInInput = z.infer<typeof AppleSignInSchema>;
 export type GoogleCallbackInput    = z.infer<typeof GoogleCallbackSchema>;
 export type AdminGoogleSignInInput = z.infer<typeof AdminGoogleSignInSchema>;
 export type CompleteProfileInput   = z.infer<typeof CompleteProfileSchema>;

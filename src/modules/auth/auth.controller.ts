@@ -6,7 +6,9 @@ import {
   AdminGoogleSignInSchema,
   CompleteProfileSchema,
   RefreshTokenSchema,
-  FcmTokenSchema,
+  FcmTokenSchema, 
+  AppleSignInSchema,
+  EmailSignInSchema
 } from './auth.schema';
 import { ok, created } from '../../shared/response';
 
@@ -65,6 +67,54 @@ export const authController = {
       next(err);
     }
   },
+
+  // POST /auth/apple — member Apple sign-in
+async appleSignIn(req: Request, res: Response, next: NextFunction) {
+  try {
+    const input  = AppleSignInSchema.parse(req.body);
+    const result = await authService.handleAppleSignIn(input);
+    return ok(res, {
+      user:                result.user,
+      profile:             result.profile,
+      is_new_member:       result.isNewMember,
+      is_profile_complete: result.isProfileComplete,
+      next_step:           result.isProfileComplete ? 'home' : 'complete_profile',
+      // Return session so client can call supabase.auth.setSession()
+      session: {
+        access_token:  result.session.access_token,
+        refresh_token: result.session.refresh_token,
+      },
+    });
+  } catch (err) {
+    if (handleZodError(err, '/auth/apple', res)) return;
+    next(err);
+  }
+},
+
+// auth.controller.ts — add inside authController
+
+async emailSignIn(req: Request, res: Response, next: NextFunction) {
+  try {
+    const input  = EmailSignInSchema.parse(req.body);
+    const result = await authService.handleEmailSignIn(input);
+    return ok(res, {
+      user:                result.user,
+      profile:             result.profile,
+      is_new_member:       result.isNewMember,
+      is_profile_complete: result.isProfileComplete,
+      next_step:           result.isProfileComplete ? 'home' : 'complete_profile',
+      session: result.session
+        ? {
+            access_token:  result.session.access_token,
+            refresh_token: result.session.refresh_token,
+          }
+        : null,
+    });
+  } catch (err) {
+    if (handleZodError(err, '/auth/email', res)) return;
+    next(err);
+  }
+},
 
   // POST /auth/complete-profile
   async completeProfile(req: Request, res: Response, next: NextFunction) {

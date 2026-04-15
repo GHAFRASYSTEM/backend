@@ -8,6 +8,9 @@ const router = Router();
 // ── Public ────────────────────────────────────────────────────────────────────
 router.post('/google',        authController.googleSignIn);
 router.post('/refresh',       authController.refresh);
+router.post('/apple', authController.appleSignIn);
+router.post('/email', authController.emailSignIn);
+
 
 // Admin Google sign-in — public because JWT is not yet attached to req.user
 // Role enforcement happens inside authService.handleAdminSignIn
