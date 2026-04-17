@@ -9,7 +9,11 @@ import transactionsRouter from './modules/transactions/transactions.router';
 import announcementsRouter from './modules/announcements/announcements.router';
 import housingRouter from './modules/housing/housing.router';
 import membersRouter from './modules/members/members.router';
+import frenchAIRouter from './modules/french-ai/french-ai.router';
 import { errorHandler }   from './middleware/error.middleware';
+
+// Import the initialization function
+import { initializePronunciationPhrases } from './modules/french-ai/french-ai.data';
 
 const app = express();
 
@@ -24,15 +28,37 @@ app.use('/auth',          authRouter);
 app.use('/dues',          duesRouter);
 app.use('/transactions',  transactionsRouter);
 app.use('/announcements', announcementsRouter);
-app.use('/members', membersRouter);
-app.use('/housing', housingRouter);
+app.use('/members',       membersRouter);
+app.use('/housing',       housingRouter);
+app.use('/french-ai',     frenchAIRouter);
 
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
 app.use(errorHandler);
 
-app.listen(env.PORT, () => {
-  console.log(`🚀 GHAFRA API running on port ${env.PORT}`);
-});
+/**
+ * Start the server with proper async initialization
+ */
+async function startServer() {
+  try {
+    console.log('Initializing French AI Tutor data...');
+    
+    // ←←← THIS IS THE IMPORTANT LINE
+    await initializePronunciationPhrases();
+
+    console.log('✅ French AI pronunciation phrases loaded successfully');
+
+    app.listen(env.PORT, () => {
+      console.log(`🚀 GHAFRA API running on port ${env.PORT}`);
+    });
+
+  } catch (error) {
+    console.error('❌ Failed to initialize French AI data:', error);
+    process.exit(1); // Exit if critical data fails to load
+  }
+}
+
+// Start the application
+startServer();
 
 export default app;

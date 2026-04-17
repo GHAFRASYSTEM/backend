@@ -22,7 +22,13 @@ const schema = z.object({
   STRIPE_SECRET_KEY:     z.string().min(1),
   STRIPE_WEBHOOK_SECRET: z.string().min(1),
 
-  //Card authentication
+  //Grok
+  GROQ_API_KEY: z.string().min(1),
+
+  //hugging Face
+  HF_API_TOKEN: z.string().min(1),
+
+  //Card authenticatio,
    CARD_SECRET:           z.string().min(1),
 });
 
