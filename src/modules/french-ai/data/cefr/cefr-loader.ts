@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import readline from 'readline';
 
 let shortPhrases: Record<string, string[]> = {};   // For pronunciation (A1-C2)
 let longTexts:   Record<string, string[]> = {};   // For reading / correction / roleplay
@@ -21,6 +20,7 @@ async function loadDatasets() {
     140  // max length
   );
 
+  
 
 
   console.log('✅ CEFR datasets loaded successfully');
@@ -82,6 +82,7 @@ export async function getRandomPronunciationPhrases(level: string, count = 25): 
     console.warn(`No phrases found for level ${level}, using fallback`);
     return ["Bonjour ! Comment allez-vous aujourd'hui ?"];
   }
+  
 
   // Shuffle and take requested count
   const shuffled = [...phrases].sort(() => Math.random() - 0.5);
