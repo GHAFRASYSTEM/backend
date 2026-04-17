@@ -21,20 +21,11 @@ async function loadDatasets() {
     140  // max length
   );
 
-  // Load longer texts (if you have the file)
-  await loadJsonlFile(
-    path.join(DATA_DIR, 'kwiqiz_fr.jsonl'), 
-    longTexts, 
-    50, 
-    800
-  );
+
 
   console.log('✅ CEFR datasets loaded successfully');
   console.log('Short phrases per level:', 
     Object.keys(shortPhrases).map(k => `${k}: ${shortPhrases[k].length}`)
-  );
-  console.log('Long texts per level:', 
-    Object.keys(longTexts).map(k => `${k}: ${longTexts[k].length}`)
   );
 }
 

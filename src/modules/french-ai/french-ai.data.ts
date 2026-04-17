@@ -16,6 +16,17 @@ export const ROLEPLAY_SCENES = [
     aiOpener:    'Bonjour! Bienvenue au Café de Flore. Vous avez une réservation?',
     suggestions: ["Un café, s'il vous plaît.", "Qu'est-ce que vous recommandez?", "L'addition, s'il vous plaît."],
   },
+{
+  label: 'Going on a Date',
+  scene: 'meeting someone you have been seeing for a while at a café or park in Paris. You already know each other and are continuing to build your connection in a relaxed, familiar atmosphere',
+  aiOpener: "Salut ! Tu es arrivé(e) vite. Ça me fait plaisir de te revoir.",
+  suggestions: [
+    "Tu as passé une bonne journée ?",
+    "Ça fait du bien de te voir encore.",
+    "On prend comme d’habitude ?",
+    "Alors, quoi de neuf depuis la dernière fois ?",
+  ],
+},
   {
     label:       'Getting Directions',
     scene:       'asking for directions in Lyon',

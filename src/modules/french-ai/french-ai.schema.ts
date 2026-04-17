@@ -16,7 +16,7 @@ export const ChatRequestSchema = z.object({
     .enum(['conversation', 'correction', 'roleplay', 'pronunciation'])
     .default('conversation'),
   roleplayScene: z.string().optional(),
-  userLevel:     z.enum(['A1', 'A2', 'B1', 'B2']).default('A1'),
+  userLevel:     z.enum(['A1', 'A2', 'B1', 'B2','C1','C2']).default('A1'),
 });
 
 export type ChatRequest = z.infer<typeof ChatRequestSchema>;
