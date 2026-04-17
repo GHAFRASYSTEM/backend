@@ -33,11 +33,13 @@ function buildSystemPrompt(
   scene?: string,
 ): string {
   const levelGuide: Record<ChatRequest['userLevel'], string> = {
-    A1: 'Use very simple sentences (present tense, common vocabulary, max 10 words per sentence). Speak slowly and clearly.',
-    A2: 'Use simple sentences with some past tense. Keep vocabulary everyday. Introduce one new word per reply.',
-    B1: 'Use varied tenses and natural sentences. Introduce idioms occasionally. Encourage the student to elaborate.',
-    B2: 'Use natural, complex French as a native speaker would. Challenge the student with nuanced vocabulary.',
-  };
+  A1: 'Use very simple sentences (present tense, common vocabulary, max 10 words per sentence). Speak slowly and clearly.',
+  A2: 'Use simple sentences with some past tense. Keep everyday vocabulary. Introduce one new word per reply.',
+  B1: 'Use varied tenses and natural sentences. Introduce idioms occasionally. Encourage the student to elaborate.',
+  B2: 'Use natural, complex French as a native speaker would. Challenge the student with nuanced vocabulary.',
+  C1: 'Use fluent, flexible, and detailed French. Include idiomatic expressions, subtle nuances, and varied sentence structures. Encourage debate, opinions, and precise expression.',
+  C2: 'Use fully natural, sophisticated, and expressive French. Incorporate cultural references, implicit meaning, humor, and advanced idioms. Interact as with an educated native speaker.',
+};
 
   const base = `You are an enthusiastic, encouraging French tutor. The student is at CEFR level ${level}.
 ${levelGuide[level]}
