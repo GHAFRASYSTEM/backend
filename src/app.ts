@@ -10,6 +10,7 @@ import announcementsRouter from './modules/announcements/announcements.router';
 import housingRouter from './modules/housing/housing.router';
 import membersRouter from './modules/members/members.router';
 import frenchAIRouter from './modules/french-ai/french-ai.router';
+import interviewRouter    from './modules/interview/interview.routes';
 import { errorHandler }   from './middleware/error.middleware';
 
 // Import the initialization function
@@ -31,6 +32,7 @@ app.use('/announcements', announcementsRouter);
 app.use('/members',       membersRouter);
 app.use('/housing',       housingRouter);
 app.use('/french-ai',     frenchAIRouter);
+app.use('/interview',     interviewRouter);
 
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 

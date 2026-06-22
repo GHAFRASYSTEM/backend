@@ -24,6 +24,8 @@ const schema = z.object({
 
   //Grok
   GROQ_API_KEY: z.string().min(1),
+    GROQ_API_KEY_1: z.string().min(1),
+    GROQ_API_KEY_2: z.string().min(1),
 
   //hugging Face
   HF_API_TOKEN: z.string().min(1),
