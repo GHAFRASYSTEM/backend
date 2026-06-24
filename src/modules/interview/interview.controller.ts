@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { Errors } from '../../shared/errors';
 import * as interviewService from './interview.service';
+import { clearMemory } from './interview.service';
 import type { UpsertContextBody, RespondBody } from './interview.types';
 
 // POST /interview/context
@@ -47,13 +48,50 @@ export async function respond(
 // POST /interview/transcribe
 export async function transcribe(req: Request, res: Response, next: NextFunction) {
   try {
-    console.log('📢 Transcribe hit | File:', !!req.file, 'Size:', req.file?.buffer?.length);
-    if (!req.file) throw Errors.badRequest('audio file is required');
+    console.log('📢 Transcribe hit | File:', !!req.file, 'Field:', req.file?.fieldname, 'Size:', req.file?.buffer?.length, 'Mime:', req.file?.mimetype);
+
+    if (!req.file) {
+      console.error('❌ No file received by Multer');
+      throw Errors.badRequest('audio file is required');
+    }
 
     const text = await interviewService.transcribe(req.file.buffer, req.file.mimetype);
-    res.json({ text });
+
+    let isQuestion = false;
+    let answer = '';
+    try {
+      const result = await interviewService.respond(req.user!.id, text);
+      isQuestion = result.isQuestion;
+      answer = result.answer;
+    } catch (respondErr) {
+      console.error('❌ Respond (post-transcribe) failed:', respondErr);
+    }
+
+    res.json({ text, isQuestion, answer });
   } catch (err) {
     console.error('❌ Transcribe failed:', err);
     next(err);
   }
+}
+
+// POST /interview/translate
+export async function translateSegment(
+  req: Request<unknown, unknown, { text: string; answerText?: string }>,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const { text, answerText } = req.body;
+    if (!text?.trim()) throw Errors.badRequest('text is required');
+
+    const result = await interviewService.translate(text, answerText);
+    res.json({ data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function clearSession(req: Request, res: Response) {
+  clearMemory(req.user!.id);
+  res.json({ ok: true });
 }

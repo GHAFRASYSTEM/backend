@@ -43,6 +43,20 @@ export interface RespondResponse {
   isQuestion: boolean;
 }
 
+// POST /interview/transcribe
 export interface TranscribeResponse {
-  text: string;
+  text:       string;
+  isQuestion: boolean;
+  answer:     string;
+}
+
+// POST /interview/translate
+export interface TranslateBody {
+  text:        string;
+  answerText?: string;         // optional: pass alongside question to translate both in one Groq call
+}
+
+export interface TranslateResponse {
+  translation:       string;
+  answerTranslation?: string;  // present when answerText was provided and needed translation
 }

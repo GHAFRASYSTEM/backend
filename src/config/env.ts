@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { z } from 'zod';
 
 const schema = z.object({
-  PORT:                  z.string().default('3000'),
+  PORT:                  z.string().default('5000'),
   NODE_ENV:              z.enum(['development', 'production', 'test']).default('development'),
 
   // Supabase

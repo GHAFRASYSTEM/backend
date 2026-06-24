@@ -1,6 +1,7 @@
 import { supabase } from '../../config/supabase';
 import { Errors } from '../../shared/errors';
 import { groq } from '../../shared/groq.client';
+import { buildPrompt } from './interview.prompt-builder';
 import type {
   UserInterviewContextRow,
   UpsertContextBody,
@@ -8,6 +9,30 @@ import type {
   RespondResponse,
 } from './interview.types';
 
+interface SessionMemory {
+  usedExperiences: string[];   // e.g. ["GHAFRA", "TiinaTii.io"]
+  usedProofPoints: string[];   // e.g. ["70%", "6000+ utilisateurs"]
+  answeredCategories: string[]; // e.g. ["behavioral", "motivation"]
+  qaHistory: { question: string; answerSummary: string }[];
+}
+
+const sessionMemory = new Map<string, SessionMemory>();
+
+function getMemory(userId: string): SessionMemory {
+  if (!sessionMemory.has(userId)) {
+    sessionMemory.set(userId, {
+      usedExperiences: [],
+      usedProofPoints: [],
+      answeredCategories: [],
+      qaHistory: [],
+    });
+  }
+  return sessionMemory.get(userId)!;
+}
+
+export function clearMemory(userId: string) {
+  sessionMemory.delete(userId);
+}
 // ─────────────────────────────────────────────────────────────
 // Context Management
 // ─────────────────────────────────────────────────────────────
@@ -62,23 +87,26 @@ export async function respond(userId: string, text: string): Promise<RespondResp
   const trimmed = text.trim();
   if (!trimmed) return { answer: '', isQuestion: false };
 
-  // Single Groq call: reconstruct garbled STT + classify as question in one shot
   const { reconstructed, isQuestion } = await reconstructAndClassify(trimmed);
-  console.log('🔧 Reconstructed:', reconstructed);
+  if (!isQuestion) return { answer: '', isQuestion: false };
 
-  if (!isQuestion) {
-    console.log('🤔 Not a question:', reconstructed);
-    return { answer: '', isQuestion: false };
-  }
-
+  const memory = getMemory(userId);
   const context = await getContextRowOrNull(userId);
+  const prompt = await buildPrompt(userId, context, reconstructed, memory);  // ← pass memory
+
   const answer = await groq.extractText(
     await groq.chat({
-      messages: [{ role: 'user', content: buildPrompt(context, reconstructed) }],
+      messages: [{ role: 'user', content: prompt }],
       temperature: 0.65,
       max_tokens: 600,
     }),
   );
+
+  // Update memory after answering
+  memory.qaHistory.push({
+    question: reconstructed,
+    answerSummary: answer.slice(0, 200), // store a truncated version
+  });
 
   return { answer, isQuestion: true };
 }
@@ -187,59 +215,134 @@ function fastClassify(text: string): boolean | null {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Prompt Builder
-// ─────────────────────────────────────────────────────────────
-
-function buildPrompt(context: UserInterviewContextRow | null, question: string): string {
-  const cv       = context?.cv_text?.trim();
-  const job      = context?.job_description?.trim();
-  const company  = context?.company_info?.trim();
-  const personal = context?.personal_info?.trim();
-  const notes    = context?.notes?.trim();
-
-  const uniqueTexts = new Set([cv, job, company].filter(Boolean));
-  const allSame = uniqueTexts.size === 1;
-
-  const contextBlock = allSame
-    ? `Entreprise / Contexte: ${cv ?? 'Non fourni'}`
-    : [
-        personal ? `Profil personnel: ${personal}` : null,
-        cv       ? `CV: ${cv}`                      : null,
-        job      ? `Poste visé: ${job}`              : null,
-        company  ? `Entreprise: ${company}`          : null,
-        notes    ? `Notes: ${notes}`                 : null,
-      ]
-        .filter(Boolean)
-        .join('\n');
-
-  return `Tu es un coach d'entretien professionnel qui aide quelqu'un à répondre à des questions en temps réel.
-
-Contexte disponible:
-${contextBlock}
-
-Question posée: "${question}"
-
-Instructions:
-- Réponds à la première personne, de façon naturelle et confiante
-- Sois concis: 3 à 5 phrases maximum, pas de listes, pas de titres
-- Si le CV est vide ou non pertinent, génère une réponse professionnelle générique mais crédible
-- Adapte le ton selon la question (formel pour technique, humain pour comportemental)
-- Réponds dans la même langue que la question`;
-}
-
-// ─────────────────────────────────────────────────────────────
 // Transcription
 // ─────────────────────────────────────────────────────────────
 
+function normalizeMimeType(mimeType: string): string {
+  const mime = (mimeType || '').toLowerCase();
+
+  if (mime.includes('wav')) return 'audio/wav';
+  if (mime.includes('webm')) return 'audio/webm';
+  if (mime.includes('ogg')) return 'audio/ogg';
+  if (mime === 'audio/x-m4a' || mime.includes('m4a')) return 'audio/m4a';
+  if (mime.includes('mpeg') || mime.includes('mp3')) return 'audio/mpeg';
+  if (mime.includes('mp4')) return 'audio/mp4';
+  if (mime.includes('flac')) return 'audio/flac';
+
+  return mime || 'audio/webm';
+}
+
+function mimeToFileName(mime: string): string {
+  if (mime.includes('wav')) return 'recording.wav';
+  if (mime.includes('webm')) return 'recording.webm';
+  if (mime.includes('ogg')) return 'recording.ogg';
+  if (mime.includes('m4a')) return 'recording.m4a';
+  if (mime.includes('mpeg') || mime.includes('mp3')) return 'recording.mp3';
+  if (mime.includes('mp4')) return 'recording.mp4';
+  if (mime.includes('flac')) return 'recording.flac';
+  return 'recording.webm';
+}
+
 export async function transcribe(audioBuffer: Buffer, mimeType: string): Promise<string> {
-  const fixedMime = mimeType === 'audio/x-m4a' ? 'audio/m4a' : mimeType;
+  try {
+    const fixedMime = normalizeMimeType(mimeType);
 
-  const formData = new FormData();
-  const blob = new Blob([new Uint8Array(audioBuffer)], { type: fixedMime });
-  formData.append('file', blob, 'recording.wav');
-  formData.append('model', 'whisper-large-v3');
-  formData.append('language', 'fr');
+    console.log(`📢 Transcribe called | Size: ${(audioBuffer.length / 1024).toFixed(1)} KB | Mime: ${fixedMime}`);
 
-  const data = await groq.transcribe(formData);
-  return data.text?.trim() ?? '';
+    const formData = new FormData();
+    const fileName = mimeToFileName(fixedMime);
+
+    const safeBuffer = new Uint8Array(
+      audioBuffer.buffer,
+      audioBuffer.byteOffset,
+      audioBuffer.byteLength,
+    );
+
+    formData.append('file', new Blob([safeBuffer], { type: fixedMime }), fileName);
+    formData.append('model', 'whisper-large-v3-turbo');
+    formData.append('language', 'fr');
+    formData.append('response_format', 'json');
+
+    const data = await groq.transcribe(formData);
+
+    const text = data.text?.trim() ?? '';
+    console.log(`✅ Transcription successful | Length: ${text.length} chars`);
+
+    return text;
+  } catch (err: any) {
+    console.error('❌ Transcription failed:', err?.message || err);
+
+    if (err?.message?.includes('413') || err?.message?.includes('payload')) {
+      throw Errors.badRequest('Audio file too large');
+    }
+    if (err?.message?.includes('400')) {
+      throw Errors.badRequest('Invalid audio format');
+    }
+
+    throw Errors.internal('Failed to transcribe audio');
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Translate
+// Accepts optional answerText to batch question + answer in one Groq call
+// ─────────────────────────────────────────────────────────────
+
+export async function translate(
+  text: string,
+  answerText?: string,
+): Promise<{ translation: string; answerTranslation?: string }> {
+  const trimmed = text.trim();
+  if (!trimmed) return { translation: '' };
+
+  const looksEnglish = (t: string) =>
+    !/[àâäéèêëîïôùûüçœæ]/i.test(t) &&
+    !/\b(je|tu|il|nous|vous|ils|une|les|des|du|est|sont|avec|pour|dans|sur|par|que|qui|mais|ou|donc|ni|car)\b/i.test(t);
+
+  const needsTranslation = !looksEnglish(trimmed);
+  const answerNeedsTranslation = answerText?.trim() && !looksEnglish(answerText.trim());
+
+  // Both already English — skip Groq entirely
+  if (!needsTranslation && !answerNeedsTranslation) {
+    return {
+      translation: trimmed,
+      answerTranslation: answerText?.trim() || undefined,
+    };
+  }
+
+  const hasAnswer = Boolean(answerText?.trim() && answerNeedsTranslation);
+
+  const content = hasAnswer
+    ? `Translate the following two interview segments to natural English.
+Output ONLY in this exact format (two lines, nothing else):
+QUESTION: <translated question>
+ANSWER: <translated answer>
+
+Question segment: "${trimmed}"
+Answer segment: "${answerText!.trim()}"`
+    : `Translate the following interview segment to natural English.
+Keep it concise and faithful. Output ONLY the translation, nothing else.
+
+Segment: "${trimmed}"`;
+
+  const res = await groq.chat({
+    messages: [{ role: 'user', content }],
+    temperature: 0.2,
+    max_tokens: 500,
+  });
+
+  const raw = groq.extractText(res).trim();
+
+  if (hasAnswer) {
+    const qMatch = raw.match(/^QUESTION:\s*(.+)/im);
+    const aMatch = raw.match(/^ANSWER:\s*(.+)/im);
+    return {
+      translation: qMatch?.[1]?.trim() || trimmed,
+      answerTranslation: aMatch?.[1]?.trim() || answerText?.trim(),
+    };
+  }
+
+  return {
+    translation: raw || trimmed,
+  };
 }

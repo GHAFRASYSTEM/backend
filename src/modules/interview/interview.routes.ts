@@ -5,7 +5,6 @@ import * as interviewController from './interview.controller';
 
 const router = Router();
 
-// Multer config for audio upload
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 25 * 1024 * 1024 }, // 25MB
@@ -15,15 +14,16 @@ const upload = multer({
     } else {
       cb(new Error('Only audio files allowed'));
     }
-  }
+  },
 });
 
 router.use(requireAuth);
 
-// Important: upload middleware only on transcribe
 router.post('/context',    interviewController.upsertContext);
 router.get('/context',     interviewController.getContext);
 router.post('/respond',    interviewController.respond);
 router.post('/transcribe', upload.single('audio'), interviewController.transcribe);
+router.post('/translate',  interviewController.translateSegment);
+router.delete('/session', interviewController.clearSession);
 
 export default router;
