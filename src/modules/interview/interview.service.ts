@@ -252,13 +252,10 @@ export async function transcribe(audioBuffer: Buffer, mimeType: string): Promise
     const formData = new FormData();
     const fileName = mimeToFileName(fixedMime);
 
-    const safeBuffer = new Uint8Array(
-      audioBuffer.buffer,
-      audioBuffer.byteOffset,
-      audioBuffer.byteLength,
-    );
+const safeBuffer = Uint8Array.from(audioBuffer);
 
-    formData.append('file', new Blob([safeBuffer], { type: fixedMime }), fileName);
+formData.append('file', new Blob([safeBuffer], { type: fixedMime }), fileName);
+
     formData.append('model', 'whisper-large-v3-turbo');
     formData.append('language', 'fr');
     formData.append('response_format', 'json');
