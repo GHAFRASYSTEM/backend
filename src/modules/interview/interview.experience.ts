@@ -15,11 +15,12 @@ import { groq } from '../../shared/groq.client';
 // The prompt builder then surfaces only the 1-2 most relevant experiences
 // for the specific question being asked, with their concrete metrics intact.
 //
-// This is intentionally NOT a hardcoded company->category map. The tags are
-// derived from the content itself (extracted once via a cheap Groq call and
-// cached on the context row), so it stays correct even if the CV changes —
-// a new job, a renamed startup, a dropped project all "just work" without a
-// code change.
+// USAGE PENALTY (new):
+// pickRelevantExperiences() now accepts a `usedExperiences` set. Any
+// experience already used this session takes a hard score penalty, so the
+// scorer will always prefer an unused experience with the same theme match
+// before falling back to a repeated one. This is MECHANICAL enforcement —
+// not a soft text instruction the model can ignore.
 
 export interface ExperienceTag {
   company: string;
@@ -123,6 +124,13 @@ ${sourceText}
 /**
  * Picks the most relevant experiences for a given question, ranked by
  * overlap between the question's implied theme and each experience's tags.
+ *
+ * USAGE PENALTY (new):
+ * Experiences already used this session (by company name, normalized) take a
+ * hard -10 score penalty. This ensures the scorer will always prefer an unused
+ * experience with equal or lower raw theme-match before repeating one, without
+ * completely blocking a repeat when there's genuinely no alternative.
+ *
  * Returns at most `limit` experiences — interview answers should lean on
  * ONE strong example, not list everything the candidate has ever done.
  */
@@ -130,24 +138,60 @@ export function pickRelevantExperiences(
   profile: ExtractedProfile,
   questionThemes: string[],
   limit = 2,
+  usedExperiences: string[] = [],   // ← NEW: company names already cited this session
+  usedProofPoints: string[] = [],   // ← NEW: proof-point strings already cited this session
 ): ExperienceTag[] {
   if (!profile.experiences.length) return [];
+
   const themes = questionThemes.map(t => t.toLowerCase());
+  const usedCompanies = new Set(usedExperiences.map(c => c.toLowerCase().trim()));
+  const usedPoints = new Set(usedProofPoints.map(p => p.toLowerCase().trim()));
+
+  const REPEAT_PENALTY = 10;
+  const PROOF_OVERLAP_PENALTY = 2; // per overlapping proof point
 
   const scored = profile.experiences.map(exp => {
-    const score = exp.strengths.reduce((acc, s) => {
+    // Theme match score — same logic as before
+    const themeScore = exp.strengths.reduce((acc, s) => {
       const sLower = s.toLowerCase();
       return acc + (themes.some(t => sLower.includes(t) || t.includes(sLower)) ? 1 : 0);
     }, 0);
-    return { exp, score };
+
+    // Penalty: this company was already the anchor of a previous answer
+    const companyPenalty = usedCompanies.has(exp.company.toLowerCase().trim())
+      ? REPEAT_PENALTY
+      : 0;
+
+    // Softer penalty: some proof points from this experience were already cited
+    const proofOverlap = exp.proofPoints.filter(p =>
+      usedPoints.has(p.toLowerCase().trim()),
+    ).length;
+    const proofPenalty = proofOverlap * PROOF_OVERLAP_PENALTY;
+
+    return {
+      exp,
+      score: themeScore - companyPenalty - proofPenalty,
+      rawThemeScore: themeScore,
+    };
   });
 
   scored.sort((a, b) => b.score - a.score);
 
-  // If nothing scored (generic/unmatched question), still return the
-  // strongest/most senior experience rather than nothing.
-  const hasAnyMatch = scored.some(s => s.score > 0);
-  const ranked = hasAnyMatch ? scored.filter(s => s.score > 0) : scored;
+  // If nothing scored positively after penalties (all experiences are either
+  // already used or don't match the theme), still return the least-repeated
+  // experience rather than nothing — a graceful degradation, not a hard block.
+  const hasAnyPositive = scored.some(s => s.score > 0);
+  const hasAnyThemeMatch = scored.some(s => s.rawThemeScore > 0);
+
+  let ranked = scored;
+  if (hasAnyPositive) {
+    ranked = scored.filter(s => s.score > 0);
+  } else if (hasAnyThemeMatch) {
+    // All theme-matching experiences are penalised — still prefer theme matches
+    // over non-matches, even penalised ones, so pick from theme-matching pool
+    ranked = scored.filter(s => s.rawThemeScore > 0);
+  }
+  // else: nothing matches at all — fall through with full list sorted by penalty only
 
   return ranked.slice(0, limit).map(s => s.exp);
 }
