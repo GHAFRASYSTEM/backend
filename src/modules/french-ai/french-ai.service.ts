@@ -9,7 +9,7 @@
  * All Groq calls go through groq.client.ts for key rotation + failure tracking.
  */
 
-import FormData from 'form-data';
+
 import fetch from 'node-fetch';
 import { AppError } from '../../shared/errors';
 import { groq } from '../../shared/groq.client';
@@ -130,24 +130,26 @@ export async function chatWithTutor(payload: ChatRequest): Promise<{
 }
 
 // ── Transcription ─────────────────────────────────────────────────────────────
+// french-ai.service.ts
 export async function transcribeAudio(
   audioBuffer: Buffer,
   mimeType: string,
   language = 'fr',
 ): Promise<{ text: string; language: string }> {
-  const form = new FormData();
-  form.append('file', audioBuffer, {
-    filename:    'audio.m4a',
-    contentType: mimeType,
-  });
-  form.append('model', 'whisper-large-v3');
-  form.append('language', language);
-  form.append('response_format', 'json');
+  const buildForm = () => {
+    const form = new FormData(); // native global FormData (no 'form-data' import in this file)
+    const bytes = new Uint8Array(audioBuffer); // sidesteps Buffer/ArrayBufferLike typing mismatch
+    const blob = new Blob([bytes], { type: mimeType });
+    form.append('file', blob, 'audio.m4a');
+    form.append('model', 'whisper-large-v3');
+    form.append('language', language);
+    form.append('response_format', 'json');
+    return form;
+  };
 
-  const data = await groq.transcribe(form);
+  const data = await groq.transcribe(buildForm);
   return { text: data.text ?? '', language: data.language ?? language };
 }
-
 // ── Text-to-Speech ────────────────────────────────────────────────────────────
 export async function synthesizeSpeech(payload: TTSRequest): Promise<Buffer> {
   const kokoro = await tryKokoro(payload.text);
@@ -173,7 +175,7 @@ async function tryKokoro(text: string): Promise<Buffer> {
       return Buffer.alloc(0);
     }
 
-    return Buffer.from(await res.arrayBuffer());
+    return Buffer.from(await res.arrayBuffer() as ArrayBuffer);
   } catch {
     return Buffer.alloc(0);
   }

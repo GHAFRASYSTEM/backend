@@ -261,13 +261,24 @@ async function chat(params: GroqChatParams): Promise<GroqChatResponse> {
 
 // Accepts both browser FormData and node `form-data` package.
 // node form-data exposes getHeaders() which must be spread into fetch headers.
-async function transcribe(formData: FormData | any): Promise<GroqTranscriptionResponse> {
+async function transcribe(
+  formDataOrFactory: FormData | (() => FormData) | any,
+): Promise<GroqTranscriptionResponse> {
   const res = await groqFetch(
     '/openai/v1/audio/transcriptions',
     (key) => {
+      const formData =
+        typeof formDataOrFactory === 'function'
+          ? formDataOrFactory()
+          : formDataOrFactory;
+
+      // Native FormData: fetch sets Content-Type + boundary automatically.
+      // Node `form-data` package instances (legacy/browser callers) still
+      // need getHeaders() spread in manually.
       const extraHeaders = typeof (formData as any).getHeaders === 'function'
         ? (formData as any).getHeaders()
         : {};
+
       return {
         method: 'POST',
         headers: { Authorization: `Bearer ${key}`, ...extraHeaders },
