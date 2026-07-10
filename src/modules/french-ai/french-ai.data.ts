@@ -1,6 +1,6 @@
 /**
  * french-ai.data.ts
- *
+ * 
  * All static content for the French AI tutor.
  * Pronunciation phrases are now loaded dynamically from readme_fr.jsonl.
  */

@@ -57,4 +57,87 @@ router.post(
   FrenchAIController.scorePronunciation,
 );
 
+// ══════════════════════════════════════════════════════════════════════════
+// AI WRITING + INSTANT CORRECTION
+// ══════════════════════════════════════════════════════════════════════════
+
+/**
+ * POST /french-ai/writing/correct
+ * Body: WritingCorrectionRequest (JSON) — { text, userLevel, context? }
+ * Returns: WritingCorrectionResult
+ */
+router.post('/writing/correct', requireAuth, FrenchAIController.correctWriting);
+
+// ══════════════════════════════════════════════════════════════════════════
+// LISTENING & DICTATION
+// ══════════════════════════════════════════════════════════════════════════
+
+/**
+ * POST /french-ai/dictation/passage
+ * Body: DictationPassageRequest (JSON) — { userLevel, topic?, lengthWords? }
+ * Returns: { text, audioBase64 }
+ */
+router.post('/dictation/passage', requireAuth, FrenchAIController.generateDictationPassage);
+
+/**
+ * POST /french-ai/dictation/check
+ * Body: DictationCheckRequest (JSON) — { originalText, userAttempt, userLevel }
+ * Returns: DictationCheckResult
+ */
+router.post('/dictation/check', requireAuth, FrenchAIController.checkDictation);
+
+// ══════════════════════════════════════════════════════════════════════════
+// READING COMPREHENSION
+// ══════════════════════════════════════════════════════════════════════════
+
+/**
+ * POST /french-ai/reading/generate
+ * Body: ReadingExerciseRequest (JSON) — { userLevel, topic? }
+ * Returns: ReadingExercise
+ */
+router.post('/reading/generate', requireAuth, FrenchAIController.generateReadingExercise);
+
+/**
+ * POST /french-ai/reading/grade
+ * Body: ReadingAnswerCheckRequest (JSON) — { exercise, userLevel, userAnswers }
+ * Returns: ReadingAnswerResult
+ */
+router.post('/reading/grade', requireAuth, FrenchAIController.gradeReadingAnswers);
+
+// ══════════════════════════════════════════════════════════════════════════
+// FILL-IN-THE-BLANK / SENTENCE BUILDER
+// ══════════════════════════════════════════════════════════════════════════
+
+/**
+ * POST /french-ai/fill-blank/generate
+ * Body: FillBlankRequest (JSON) — { userLevel, focus?, count? }
+ * Returns: FillBlankExercise[]
+ */
+router.post('/fill-blank/generate', requireAuth, FrenchAIController.generateFillBlankSet);
+
+/**
+ * POST /french-ai/fill-blank/check
+ * Body: FillBlankCheckRequest (JSON) — { exercise, userAnswer }
+ * Returns: FillBlankCheckResult
+ */
+router.post('/fill-blank/check', requireAuth, FrenchAIController.checkFillBlankAnswer);
+
+// ══════════════════════════════════════════════════════════════════════════
+// AI FLASHCARDS
+// ══════════════════════════════════════════════════════════════════════════
+
+/**
+ * POST /french-ai/flashcards/generate
+ * Body: FlashcardGenerateRequest (JSON) — { items, userLevel, count? }
+ * Returns: Flashcard[]
+ */
+router.post('/flashcards/generate', requireAuth, FrenchAIController.generateFlashcards);
+
+/**
+ * POST /french-ai/flashcards/audio
+ * Body: { word: string }
+ * Returns: audio/mpeg binary
+ */
+router.post('/flashcards/audio', requireAuth, FrenchAIController.flashcardAudio);
+
 export default router;
