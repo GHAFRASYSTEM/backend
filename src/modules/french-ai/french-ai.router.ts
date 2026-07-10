@@ -140,4 +140,16 @@ router.post('/flashcards/generate', requireAuth, FrenchAIController.generateFlas
  */
 router.post('/flashcards/audio', requireAuth, FrenchAIController.flashcardAudio);
 
+// ══════════════════════════════════════════════════════════════════════════
+// VOCAB QUIZ
+// ══════════════════════════════════════════════════════════════════════════
+
+/**
+ * POST /french-ai/vocab-quiz/generate
+ * Body: VocabQuizRequest (JSON) — { category? | words?, userLevel, count?, questionTypes? }
+ * Returns: VocabQuizResult (questions include options, correctness, wrong-answer
+ * explanations, and per-question audioBase64 — no separate check endpoint needed)
+ */
+router.post('/vocab-quiz/generate', requireAuth, FrenchAIController.generateVocabQuiz);
+
 export default router;

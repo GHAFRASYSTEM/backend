@@ -256,6 +256,80 @@ export const FlashcardAudioRequestSchema = z.object({
 
 export type FlashcardAudioRequest = z.infer<typeof FlashcardAudioRequestSchema>;
 
+// ══════════════════════════════════════════════════════════════════════════
+// VOCAB QUIZ — category-driven, audio-first, multiple choice
+// ══════════════════════════════════════════════════════════════════════════
+// Unlike Flashcards (which mine words out of text the learner already saw),
+// a Vocab Quiz starts from a topic the learner picks — "Numbers", "Verbs",
+// "Electrical Appliances", etc. — and produces two kinds of active-recall
+// questions instead of passive flip cards:
+//
+//   - listening_choice:    audio plays a word/phrase; 4 options; pick which
+//                           one was said (trains listening discrimination —
+//                           e.g. seize/seize vs soixante/soixante-dix)
+//   - sentence_completion: a sentence with a blank; 4 candidate words;
+//                           pick the one that correctly completes it
+//
+// Grading is entirely client-side: each option already carries `correct`
+// and (for the wrong ones) a `wrongExplanation`, so tapping an answer gives
+// instant feedback with no extra round trip. Same tradeoff as
+// ReadingQuestion/FillBlankExercise above — answers are visible in the
+// network payload since there's no server-side session store yet.
+
+export const VocabCategorySchema = z.enum([
+  'numbers',              // cardinal/ordinal numbers, telling time, dates, years, weights & measures
+  'electrical_appliances',
+  'verbs',
+  'adjectives',
+  'food',
+  'family',
+  'travel',
+  'colors',
+  'custom',
+]);
+
+export type VocabCategory = z.infer<typeof VocabCategorySchema>;
+
+export const VocabQuizQuestionTypeSchema = z.enum(['listening_choice', 'sentence_completion']);
+export type VocabQuizQuestionType = z.infer<typeof VocabQuizQuestionTypeSchema>;
+
+export const VocabQuizRequestSchema = z.object({
+  // Either a preset category OR an explicit word list (e.g. reuse words
+  // from a flashcard deck the learner just generated) — at least one required.
+  category:      VocabCategorySchema.optional(),
+  words:         z.array(z.string().min(1).max(60)).max(30).optional(),
+  userLevel:     CefrLevelSchema.default('A1'),
+  count:         z.number().int().min(1).max(15).default(6),
+  questionTypes: z.array(VocabQuizQuestionTypeSchema).min(1)
+    .default(['listening_choice', 'sentence_completion']),
+}).refine(d => !!d.category || (d.words && d.words.length > 0), {
+  message: 'Provide either a category or a non-empty list of words',
+});
+
+export type VocabQuizRequest = z.infer<typeof VocabQuizRequestSchema>;
+
+export interface VocabQuizOption {
+  id: string;
+  text: string;
+  correct: boolean;
+  /** Shown only when the learner taps this option and it's wrong. Omitted for the correct option. */
+  wrongExplanation?: string;
+}
+
+export interface VocabQuizQuestion {
+  id: string;
+  type: VocabQuizQuestionType;
+  /** listening_choice: the word/phrase that gets spoken. sentence_completion: the sentence containing "___". */
+  prompt: string;
+  options: VocabQuizOption[];
+  /** base64 audio of `prompt` being spoken — present for listening_choice, and for sentence_completion when useful for extra listening practice. */
+  audioBase64?: string;
+}
+
+export interface VocabQuizResult {
+  questions: VocabQuizQuestion[];
+}
+
 // ── Config ────────────────────────────────────────────────────────────────────
 export interface RoleplayScene {
   label:       string;

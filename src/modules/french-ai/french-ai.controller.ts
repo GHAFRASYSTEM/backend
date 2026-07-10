@@ -13,6 +13,7 @@ import {
   FillBlankCheckRequestSchema,
   FlashcardGenerateRequestSchema,
   FlashcardAudioRequestSchema,
+  VocabQuizRequestSchema,
 } from './french-ai.schema';
 import * as FrenchAIService from './french-ai.service';
 import { ok } from '../../shared/response';
@@ -241,6 +242,27 @@ export async function flashcardAudio(req: Request, res: Response, next: NextFunc
     res.set('Content-Type', 'audio/mpeg');
     res.set('Content-Length', String(audioBuffer.length));
     res.send(audioBuffer);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// VOCAB QUIZ
+// ══════════════════════════════════════════════════════════════════════════
+
+/**
+ * POST /french-ai/vocab-quiz/generate
+ * Body: VocabQuizRequest (JSON) — { category? | words?, userLevel, count?, questionTypes? }
+ * Returns: VocabQuizResult — questions already carry per-option correctness
+ * and wrong-answer explanations, plus audioBase64 per question, so the
+ * client can run the whole quiz (play, answer, explain) without further calls.
+ */
+export async function generateVocabQuiz(req: Request, res: Response, next: NextFunction) {
+  try {
+    const body = VocabQuizRequestSchema.parse(req.body);
+    const result = await FrenchAIService.generateVocabQuiz(body);
+    ok(res, result);
   } catch (err) {
     next(err);
   }
