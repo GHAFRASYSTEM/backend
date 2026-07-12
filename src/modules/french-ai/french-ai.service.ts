@@ -450,28 +450,76 @@ export async function synthesizeFlashcardAudio(word: string): Promise<Buffer> {
 //  - sentence_completion: read a sentence with a blank, pick the word that fits
 // Both come back with the wrong options already carrying an explanation, so
 // the client can grade instantly without another round trip.
+//
+// AMBIGUITY FIX: for sentence_completion, many valid fills exist for a bare
+// blank ("J'ai ___ kilos de pommes" — any plural number scans fine). Text
+// alone often can't disambiguate a number/quantity answer. So the audio for
+// sentence_completion is now synthesized from the SENTENCE WITH THE CORRECT
+// ANSWER FILLED IN, not the blanked sentence — the same way listening_choice
+// makes the audio authoritative. Previously we stripped the blank marker
+// and left the number out entirely, so "Hear sentence" carried no
+// disambiguating information at all. See buildVocabQuizPrompt for the
+// matching prompt-side rule (forbid genuinely ambiguous blanks; treat
+// audio as the source of truth for numbers/quantifiers).
+
+const TOKENS_PER_QUESTION = 480;
+const MAX_QUESTIONS_PER_CALL = 8; // keep each completion small enough to reliably finish without truncating mid-JSON
+
+function chunkCount(total: number, size: number): number[] {
+  const chunks: number[] = [];
+  let remaining = total;
+  while (remaining > 0) {
+    const n = Math.min(size, remaining);
+    chunks.push(n);
+    remaining -= n;
+  }
+  return chunks;
+}
+
 export async function generateVocabQuiz(payload: VocabQuizRequest): Promise<VocabQuizResult> {
-  const systemPrompt = buildVocabQuizPrompt(
-    payload.userLevel,
-    { category: payload.category, words: payload.words },
-    payload.questionTypes,
-    payload.count,
-  );
+  const batches = chunkCount(payload.count, MAX_QUESTIONS_PER_CALL);
 
-  const { questions } = await callGroqForJSON<{ questions: VocabQuizQuestion[] }>(
-    systemPrompt,
-    'Generate the quiz now.',
-    { temperature: 0.8, max_tokens: 1600 },
-  );
+  // Sequential rather than Promise.all — avoids hammering a single Groq key
+  // with several large parallel completions, and keeps a failed batch easy
+  // to attribute in logs instead of one another.
+  const batchResults: VocabQuizQuestion[] = [];
+  for (const batchCount of batches) {
+    const systemPrompt = buildVocabQuizPrompt(
+      payload.userLevel,
+      { category: payload.category, words: payload.words },
+      payload.questionTypes,
+      batchCount,
+    );
 
-  // Attach audio per-question. listening_choice needs it to function at all;
-  // sentence_completion gets it too as bonus listening practice. A failed
-  // synthesis for one question shouldn't sink the whole quiz — the client
-  // can always fall back to calling /tts with the question's `prompt`.
+    try {
+      const { questions } = await callGroqForJSON<{ questions: VocabQuizQuestion[] }>(
+        systemPrompt,
+        'Generate the quiz now.',
+        { temperature: 0.85, max_tokens: Math.min(8000, batchCount * TOKENS_PER_QUESTION + 400) },
+      );
+      batchResults.push(...questions);
+    } catch (err) {
+      console.error(`Vocab quiz batch of ${batchCount} failed to parse:`, err);
+    }
+  }
+
+  if (batchResults.length === 0) {
+    throw new AppError('Failed to generate vocab quiz — please try again', 502);
+  }
+
   const withAudio = await Promise.all(
-    questions.map(async (q) => {
+    batchResults.map(async (q) => {
       try {
-        const audio = await synthesizeSpeech(defaultTTSRequest(q.prompt.replace(/_+/g, '')));
+        // Speak the CORRECT sentence, not the blanked one — this is what
+        // actually lets the learner disambiguate a number/quantity answer
+        // that reads as grammatically valid with multiple options. For
+        // listening_choice, prompt already IS the word/phrase to say.
+        const correctText = q.options.find(o => o.correct)?.text ?? '';
+        const spokenText = q.type === 'sentence_completion' && correctText
+          ? q.prompt.replace(/_+/g, correctText)
+          : q.prompt;
+
+        const audio = await synthesizeSpeech(defaultTTSRequest(spokenText));
         return { ...q, audioBase64: audio.length ? audio.toString('base64') : undefined };
       } catch {
         return q;

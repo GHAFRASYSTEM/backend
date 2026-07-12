@@ -32,6 +32,7 @@ import type {
   VocabCategory,
   VocabQuizRequest,
 } from './french-ai.schema';
+export { buildVocabQuizPrompt } from './prompts/vocabquiz';
 
 // ── Shared CEFR level guide ───────────────────────────────────────────────────
 // Used by every feature below so they all calibrate to the exact same level
@@ -156,32 +157,7 @@ arguments coherently, express themselves spontaneously, very fluently and
 precisely, differentiating finer shades of meaning even in complex situations.`,
 };
 
-// ── Vocab quiz category guide ─────────────────────────────────────────────────
-export const CATEGORY_GUIDE: Record<VocabCategory, string> = {
-  numbers: `Blend across ALL of these rather than sticking to plain counting:
-cardinal numbers (un, vingt-trois...), ordinal numbers (premier, deuxième...),
-telling time ("il est trois heures et quart", "quelle heure est-il ?"), dates
-("le combien sommes-nous ?", days/months), years spoken aloud ("deux mille
-vingt-quatre"), and weights/measures (kilos, grammes, litres, mètres). This
-category is exactly where French has classic learner traps — 16 vs 60
-(seize/soixante), 70/80/90 built from 60+10 / 4×20 / 4×20+10 — lean into those
-for listening_choice distractors.`,
-  electrical_appliances: `Household electrical appliances and electronics: le
-frigo, le grille-pain, la machine à laver, l'aspirateur, le four à
-micro-ondes, le sèche-linge, le fer à repasser, and similar everyday items.`,
-  verbs: `High-frequency everyday verbs appropriate for the level, mostly in
-infinitive form, occasionally shown conjugated in a natural sentence context.`,
-  adjectives: `Common descriptive adjectives — physical appearance, emotion,
-and opinion/quality adjectives a learner would actually reach for.`,
-  food: `Everyday food and drink vocabulary — fruits, vegetables, meals,
-drinks, basic cooking terms.`,
-  family: `Family member vocabulary and relationship terms.`,
-  travel: `Travel and transportation vocabulary — bus, train, airport,
-luggage, tickets, directions.`,
-  colors: `Color vocabulary, including a few shades and common color-related
-expressions ("voir la vie en rose").`,
-  custom: `A general, useful mix of everyday vocabulary appropriate for the level.`,
-};
+
 
 // ── Topic pool (fixes the "Bonjour, je m'appelle" repetition problem) ────────
 // When a caller doesn't supply a topic, we pick one of these at random and
@@ -512,63 +488,4 @@ For each, respond with ONLY a JSON object:
 Vary the example sentences across cards — don't build every one around the same
 subject or scenario. No markdown fences, no commentary outside the JSON. Don't
 repeat the same word twice.`;
-}
-
-// ══════════════════════════════════════════════════════════════════════════
-// 9. VOCAB QUIZ
-// ══════════════════════════════════════════════════════════════════════════
-export function buildVocabQuizPrompt(
-  level: CefrLevel,
-  focus: { category?: VocabCategory; words?: string[] },
-  questionTypes: VocabQuizRequest['questionTypes'],
-  count: number,
-): string {
-  const topicDescription = focus.category
-    ? CATEGORY_GUIDE[focus.category]
-    : `Base every question on ONLY this specific set of words/phrases (don't
-introduce unrelated vocabulary): ${focus.words!.join(', ')}`;
-
-  return `You create French vocabulary quiz questions for a CEFR ${level} learner.
-${LEVEL_GUIDE[level]}
-
-TOPIC: ${topicDescription}
-
-Generate exactly ${count} questions, using only these question types: ${questionTypes.join(', ')}
-(mix across them if more than one is listed).
-
-- listening_choice: "prompt" is a single French word or short phrase that will
-  be spoken aloud. Provide exactly 4 "options": one correct (matches the
-  prompt exactly) and 3 plausible distractors — words a learner could
-  genuinely mishear the prompt as (similar sound, similar rhythm, a classic
-  confusion for this topic). For each WRONG option, write a short, kind
-  "wrongExplanation" in English clarifying how it differs from what was
-  actually said. Do not add wrongExplanation to the correct option.
-
-- sentence_completion: "prompt" is a natural French sentence with exactly one
-  blank written as "___". Provide exactly 4 "options" (single words or short
-  phrases): one correct fit and 3 that are wrong because of meaning, gender/
-  number agreement, or register. For each WRONG option, write a short,
-  specific "wrongExplanation" in English (e.g. "means happy, not tired" or
-  "wrong gender — this needs the feminine form").
-
-Vary the sentence subjects/settings across questions — don't reuse the same
-scenario repeatedly.
-
-Respond with ONLY a JSON object matching exactly:
-
-{
-  "questions": [
-    {
-      "id": string,
-      "type": "listening_choice" | "sentence_completion",
-      "prompt": string,
-      "options": [
-        { "id": string, "text": string, "correct": boolean, "wrongExplanation": string }
-      ]
-    }
-  ]
-}
-
-Exactly 4 options per question, exactly 1 marked correct: true. No markdown
-fences, no commentary outside the JSON.`;
 }

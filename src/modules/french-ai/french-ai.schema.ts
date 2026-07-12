@@ -279,6 +279,7 @@ export type FlashcardAudioRequest = z.infer<typeof FlashcardAudioRequestSchema>;
 export const VocabCategorySchema = z.enum([
   'numbers',              // cardinal/ordinal numbers, telling time, dates, years, weights & measures
   'electrical_appliances',
+  'quantifiers',
   'verbs',
   'adjectives',
   'food',
@@ -299,7 +300,7 @@ export const VocabQuizRequestSchema = z.object({
   category:      VocabCategorySchema.optional(),
   words:         z.array(z.string().min(1).max(60)).max(30).optional(),
   userLevel:     CefrLevelSchema.default('A1'),
-  count:         z.number().int().min(1).max(15).default(6),
+  count:         z.number().int().min(1).max(30).default(15),
   questionTypes: z.array(VocabQuizQuestionTypeSchema).min(1)
     .default(['listening_choice', 'sentence_completion']),
 }).refine(d => !!d.category || (d.words && d.words.length > 0), {
@@ -314,6 +315,7 @@ export interface VocabQuizOption {
   correct: boolean;
   /** Shown only when the learner taps this option and it's wrong. Omitted for the correct option. */
   wrongExplanation?: string;
+  englishHint?: string;
 }
 
 export interface VocabQuizQuestion {
@@ -324,6 +326,7 @@ export interface VocabQuizQuestion {
   options: VocabQuizOption[];
   /** base64 audio of `prompt` being spoken — present for listening_choice, and for sentence_completion when useful for extra listening practice. */
   audioBase64?: string;
+  sayItOutLoad?: string;
 }
 
 export interface VocabQuizResult {
