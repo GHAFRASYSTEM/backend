@@ -12,6 +12,24 @@ import type {
 const BUCKET = 'pickup-photos';
 const ACTIVE_STATUSES = ['pending', 'assigned'];
 
+// Contact fields exposed for a volunteer/student profile embed. Keep this
+// narrow — these rows are joined into a request a member can read, so only
+// expose what's needed to actually get in touch.
+const CONTACT_FIELDS = 'name, email, photo_url, ghana_phone, french_phone';
+
+// Member-facing select: the member already knows their own info, so only
+// the assigned volunteer's contact card is embedded.
+const MEMBER_SELECT = `*, volunteer:profiles!pickup_requests_assigned_to_profiles_fkey(${CONTACT_FIELDS})`;
+
+// Admin-facing select: both the student who filed the request and (once
+// assigned) the volunteer meeting them, so the admin list shows both at a
+// glance without a second lookup.
+const ADMIN_SELECT = `
+  *,
+  student:profiles!pickup_requests_user_id_profiles_fkey(${CONTACT_FIELDS}),
+  volunteer:profiles!pickup_requests_assigned_to_profiles_fkey(${CONTACT_FIELDS})
+`;
+
 export const pickupService = {
 
   // ── 1. Signed upload URL ──────────────────────────────────────────────
@@ -69,7 +87,7 @@ export const pickupService = {
         ticket_photo_url: input.ticket_photo_url  ?? null,
         status:           'pending',
       })
-      .select()
+      .select(MEMBER_SELECT)
       .single();
 
     if (error) throw error;
@@ -106,7 +124,7 @@ export const pickupService = {
   async getMyRequest(userId: string) {
     const { data, error } = await supabase
       .from('pickup_requests')
-      .select('*')
+      .select(MEMBER_SELECT)
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -203,57 +221,57 @@ export const pickupService = {
     return pickupService.finalizeRecord(data);
   },
 
-  // ── 6. Admin: list requests ────────────────────────────────────────────
-  async listRequests(query: ListPickupRequestsQuery) {
-    let q = supabase
-      .from('pickup_requests')
-      .select('*, profiles!pickup_requests_user_id_fkey(name, email, ghana_phone)')
-      .order('arrival_date', { ascending: true })
-      .order('arrival_time', { ascending: true });
+// ── 6. Admin: list requests ────────────────────────────────────────────
+async listRequests(query: ListPickupRequestsQuery) {
+  let q = supabase
+    .from('pickup_requests')
+    .select(ADMIN_SELECT)                              // ← was the old inline `profiles!...` string
+    .order('arrival_date', { ascending: true })
+    .order('arrival_time', { ascending: true });
 
-    if (query.status) q = q.eq('status', query.status);
-    if (query.gare)   q = q.eq('gare', query.gare);
-    if (query.date)   q = q.eq('arrival_date', query.date);
+  if (query.status) q = q.eq('status', query.status);
+  if (query.gare)   q = q.eq('gare', query.gare);
+  if (query.date)   q = q.eq('arrival_date', query.date);
 
-    const { data, error } = await q;
-    if (error) throw error;
-    if (!data) return [];
-    return Promise.all(data.map(record => pickupService.finalizeRecord(record)));
-  },
+  const { data, error } = await q;
+  if (error) throw error;
+  if (!data) return [];
+  return Promise.all(data.map(record => pickupService.finalizeRecord(record)));
+},
 
-  // ── 7. Admin: update status / assign ───────────────────────────────────
-  async adminUpdateStatus(requestId: string, input: AdminUpdateStatusInput) {
-    const { data: existing } = await supabase
-      .from('pickup_requests')
-      .select('id, user_id')
-      .eq('id', requestId)
-      .single();
+// ── 7. Admin: update status / assign ───────────────────────────────────
+async adminUpdateStatus(requestId: string, input: AdminUpdateStatusInput) {
+  const { data: existing } = await supabase
+    .from('pickup_requests')
+    .select('id, user_id')
+    .eq('id', requestId)
+    .single();
 
-    if (!existing) throw Errors.notFound('Pickup request');
+  if (!existing) throw Errors.notFound('Pickup request');
 
-    const { data, error } = await supabase
-      .from('pickup_requests')
-      .update({
-        status:      input.status,
-        assigned_to: input.assigned_to ?? null,
-        admin_notes: input.admin_notes ?? null,
-        updated_at:  new Date().toISOString(),
+  const { data, error } = await supabase
+    .from('pickup_requests')
+    .update({
+      status:      input.status,
+      assigned_to: input.assigned_to ?? null,
+      admin_notes: input.admin_notes ?? null,
+      updated_at:  new Date().toISOString(),
+    })
+    .eq('id', requestId)
+    .select(ADMIN_SELECT)                               // ← was `.select()` with no embed at all
+    .single();
+
+  if (error) throw error;
+
+  if (input.status === 'assigned') {
+    notificationService
+      .sendToUser(existing.user_id, {
+        title: '✅ Your pickup is arranged',
+        body:  'A GHAFRA volunteer has been assigned to meet you at the station.',
       })
-      .eq('id', requestId)
-      .select()
-      .single();
+      .catch(err => console.error('[pickup] user notify failed:', err));
+  }
 
-    if (error) throw error;
-
-    if (input.status === 'assigned') {
-      notificationService
-        .sendToUser(existing.user_id, {
-          title: '✅ Your pickup is arranged',
-          body:  'A GHAFRA volunteer has been assigned to meet you at the station.',
-        })
-        .catch(err => console.error('[pickup] user notify failed:', err));
-    }
-
-    return pickupService.finalizeRecord(data);
-  },
+  return pickupService.finalizeRecord(data);
+},
 };
