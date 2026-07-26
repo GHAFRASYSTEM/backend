@@ -83,7 +83,7 @@ export const pickupService = {
       })
       .catch(err => console.error('[pickup] admin notify failed:', err));
 
-    return request;
+    return pickupService.finalizeRecord(request);
   },
 
   // ── Helper: notify every admin individually ───────────────────────────
@@ -114,7 +114,41 @@ export const pickupService = {
 
     if (error) throw error;
     if (!data) throw Errors.notFound('Pickup request');
-    return data;
+    return pickupService.finalizeRecord(data);
+  },
+
+  // ── Helper: normalize a raw DB row before it goes to the frontend ──────
+  // Two things happen here:
+  //  1. Postgres `time` columns round-trip as "HH:mm:ss", not the "HH:mm"
+  //     the frontend sends and expects back — left as-is, prefilling a form
+  //     with "00:32:00" produces an invalid Date (NaN). Always trim to
+  //     "HH:mm" on the way out.
+  //  2. photo_url / ticket_photo_url are paths in a PRIVATE bucket, so the
+  //     frontend can't render them directly — resolve short-lived signed
+  //     URLs fresh on every read (not stored, since a stored signed URL
+  //     would silently expire and break the UI later).
+  async finalizeRecord<T extends {
+    arrival_time:     string;
+    photo_url:        string | null;
+    ticket_photo_url: string | null;
+  }>(
+    record: T
+  ): Promise<T & { photo_signed_url: string | null; ticket_signed_url: string | null }> {
+    const [photo, ticket] = await Promise.all([
+      record.photo_url
+        ? supabase.storage.from(BUCKET).createSignedUrl(record.photo_url, 3600)
+        : Promise.resolve(null),
+      record.ticket_photo_url
+        ? supabase.storage.from(BUCKET).createSignedUrl(record.ticket_photo_url, 3600)
+        : Promise.resolve(null),
+    ]);
+
+    return {
+      ...record,
+      arrival_time:       record.arrival_time?.slice(0, 5) ?? record.arrival_time,
+      photo_signed_url:   photo?.data?.signedUrl  ?? null,
+      ticket_signed_url:  ticket?.data?.signedUrl ?? null,
+    };
   },
 
   // ── 4. Update my request (only while pending) ─────────────────────────
@@ -140,7 +174,7 @@ export const pickupService = {
       .single();
 
     if (error) throw error;
-    return data;
+    return pickupService.finalizeRecord(data);
   },
 
   // ── 5. Cancel my request ───────────────────────────────────────────────
@@ -166,7 +200,7 @@ export const pickupService = {
       .single();
 
     if (error) throw error;
-    return data;
+    return pickupService.finalizeRecord(data);
   },
 
   // ── 6. Admin: list requests ────────────────────────────────────────────
@@ -183,7 +217,8 @@ export const pickupService = {
 
     const { data, error } = await q;
     if (error) throw error;
-    return data;
+    if (!data) return [];
+    return Promise.all(data.map(record => pickupService.finalizeRecord(record)));
   },
 
   // ── 7. Admin: update status / assign ───────────────────────────────────
@@ -219,6 +254,6 @@ export const pickupService = {
         .catch(err => console.error('[pickup] user notify failed:', err));
     }
 
-    return data;
+    return pickupService.finalizeRecord(data);
   },
 };
