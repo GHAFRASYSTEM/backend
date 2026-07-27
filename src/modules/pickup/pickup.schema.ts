@@ -14,7 +14,7 @@ export const CreatePickupRequestSchema = z.object({
   phone:            z.string().trim().min(6, 'Phone number is required').max(20),
   arrival_date:     z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'arrival_date must be YYYY-MM-DD'),
   arrival_time:     z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, 'arrival_time must be HH:mm'),
-  train_number:     z.string().trim().min(1, 'Train number is required').max(40),
+  train_number:     z.string().trim().min(1, 'Train number is required').max(100),
   gare:             z.enum(GARES),
   expected_luggage: z.string().trim().max(200).optional(),
   house_address:    z.string().trim().min(5, 'House address is required').max(500),
