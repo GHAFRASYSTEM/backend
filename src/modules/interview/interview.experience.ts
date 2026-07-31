@@ -140,6 +140,7 @@ export function pickRelevantExperiences(
   limit = 2,
   usedExperiences: string[] = [],   // ← NEW: company names already cited this session
   usedProofPoints: string[] = [],   // ← NEW: proof-point strings already cited this session
+  questionText: string = '',
 ): ExperienceTag[] {
   if (!profile.experiences.length) return [];
 
@@ -150,12 +151,17 @@ export function pickRelevantExperiences(
   const REPEAT_PENALTY = 10;
   const PROOF_OVERLAP_PENALTY = 2; // per overlapping proof point
 
+  const qLower = questionText.toLowerCase();
+
   const scored = profile.experiences.map(exp => {
     // Theme match score — same logic as before
     const themeScore = exp.strengths.reduce((acc, s) => {
       const sLower = s.toLowerCase();
       return acc + (themes.some(t => sLower.includes(t) || t.includes(sLower)) ? 1 : 0);
     }, 0);
+
+     const stackHit = exp.stack.some(s => qLower.includes(s.toLowerCase()));
+    const stackBonus = stackHit ? 5 : 0;
 
     // Penalty: this company was already the anchor of a previous answer
     const companyPenalty = usedCompanies.has(exp.company.toLowerCase().trim())
@@ -168,11 +174,8 @@ export function pickRelevantExperiences(
     ).length;
     const proofPenalty = proofOverlap * PROOF_OVERLAP_PENALTY;
 
-    return {
-      exp,
-      score: themeScore - companyPenalty - proofPenalty,
-      rawThemeScore: themeScore,
-    };
+        return { exp, score: themeScore + stackBonus - companyPenalty - proofPenalty, rawThemeScore: themeScore + stackBonus };
+
   });
 
   scored.sort((a, b) => b.score - a.score);

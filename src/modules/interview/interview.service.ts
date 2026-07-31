@@ -380,6 +380,7 @@ function extractHeadline(personalInfo: string): string {
 function extractCompanyName(jobDescription: string): string {
   const patterns = [
     /^COMPANY[:\s]+([A-Z][^\n,]{2,40})/im,
+    /About\s+([A-Z][\w.]{1,30})\s+by/i,       
     /Join\s+([A-Z][^\n,]{2,40})/i,
     /chez\s+([A-Z][^\n,]{2,40})/i,
     /at\s+([A-Z][^\n,]{2,40})\b/i,
@@ -392,7 +393,7 @@ function extractCompanyName(jobDescription: string): string {
 }
 
 function extractCity(jobDescription: string): string {
-  const m = jobDescription.match(/LOCATION[:\s]+([^\n(,]+)/i);
+  const m = jobDescription.match(/Location[:\s|]+([A-Za-zÀ-ÿ\s]+?)(?:\s*\(|,|\n|$)/i);
   return m ? m[1].trim() : '';
 }
 
