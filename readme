@@ -1,87 +1,45 @@
-ghafra-backend/
-├── src/
-│   ├── config/
-│   │   ├── supabase.ts          ← Supabase admin client
-│   │   ├── firebase.ts          ← FCM admin SDK init
-│   │   ├── resend.ts            ← Resend client init
-│   │   └── env.ts               ← Zod-validated env vars
-│   │
-│   ├── modules/
-│   │   ├── auth/
-│   │   │   ├── auth.router.ts
-│   │   │   ├── auth.controller.ts
-│   │   │   ├── auth.service.ts
-│   │   │   └── auth.schema.ts   ← Zod request schemas
-│   │   │
-│   │   ├── members/
-│   │   │   ├── members.router.ts
-│   │   │   ├── members.controller.ts
-│   │   │   ├── members.service.ts
-│   │   │   └── members.schema.ts
-│   │   │
-│   │   ├── dues/
-│   │   │   ├── dues.router.ts
-│   │   │   ├── dues.controller.ts
-│   │   │   ├── dues.service.ts
-│   │   │   └── dues.schema.ts
-│   │   │
-│   │   ├── donations/
-│   │   │   ├── donations.router.ts
-│   │   │   ├── donations.controller.ts
-│   │   │   ├── donations.service.ts
-│   │   │   └── donations.schema.ts
-│   │   │
-│   │   ├── announcements/
-│   │   │   ├── announcements.router.ts
-│   │   │   ├── announcements.controller.ts
-│   │   │   ├── announcements.service.ts
-│   │   │   └── announcements.schema.ts
-│   │   │
-│   │   ├── notifications/
-│   │   │   ├── notifications.router.ts
-│   │   │   ├── notifications.controller.ts
-│   │   │   ├── notifications.service.ts  ← FCM logic
-│   │   │   └── notifications.schema.ts
-│   │   │
-│   │   ├── transactions/
-│   │   │   ├── transactions.router.ts
-│   │   │   ├── transactions.controller.ts
-│   │   │   └── transactions.service.ts
-│   │   │
-│   │   └── mail/
-│   │       ├── mail.service.ts           ← Resend logic
-│   │       └── templates/
-│   │           ├── welcome.tsx           ← React Email templates
-│   │           ├── dues-receipt.tsx
-│   │           ├── donation-receipt.tsx
-│   │           └── announcement.tsx
-│   │
-│   ├── middleware/
-│   │   ├── auth.middleware.ts    ← Verify Supabase JWT
-│   │   ├── role.middleware.ts    ← Admin / member guard
-│   │   └── error.middleware.ts   ← Global error handler
-│   │
-│   ├── shared/
-│   │   ├── types.ts              ← Shared TS interfaces
-│   │   ├── errors.ts             ← AppError class
-│   │   └── response.ts           ← Standard API response shape
-│   │
-│   ├── jobs/
-│   │   ├── dues-reminder.job.ts  ← Cron: remind before month end
-│   │   └── index.ts              ← Register all cron jobs
-│   │
-│   └── app.ts                    ← Express app setup
-│
-├── supabase/
-│   ├── migrations/
-│   │   ├── 001_profiles.sql
-│   │   ├── 002_dues.sql
-│   │   ├── 003_donations.sql
-│   │   ├── 004_announcements.sql
-│   │   ├── 005_notifications.sql
-│   │   └── 006_fcm_tokens.sql
-│   └── seed.sql
-│
-├── .env.example
-├── package.json
-└── tsconfig.json
+# GHAFRA Backend
+
+The GHAFRA API is an Express and TypeScript service backed by Supabase. It
+also integrates Firebase Cloud Messaging, Resend, Stripe, Groq, and Hugging
+Face.
+
+## Requirements
+
+- Node.js 20+
+- npm
+- A configured Supabase project and the external service credentials listed in
+  `.env.example`
+
+## Local setup
+
+```bash
+cd backend
+cp .env.example .env
+# Fill in every value in .env. Never commit .env or service credentials.
+npm ci
+npm run dev
+```
+
+The API listens on `PORT` (5000 by default). Check it with
+`http://localhost:5000/health`.
+
+## Commands
+
+```bash
+npm run dev       # watch mode
+npm run build     # type-check and create dist/
+npm start         # run the compiled service
+npm run db:migrate
+npm run db:seed
+```
+
+`npm ci` installs the versions already recorded in `package-lock.json`; it
+does not add dependencies to the project.
+
+## Environment
+
+`.env.example` documents all variables validated by `src/config/env.ts`.
+Server-only keys must stay in the backend environment and must never be
+copied into a browser or mobile `.env` file.
+
