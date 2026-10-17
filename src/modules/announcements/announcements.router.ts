@@ -6,8 +6,8 @@ import * as Controller from './announcements.controller';
 const router = Router();
 
 // ── Any authenticated user — read only ────────────────────────────────────────
-router.get('/',    requireAuth, Controller.list);
-router.get('/:id', requireAuth, Controller.getOne);
+router.get('/',     Controller.list);
+router.get('/:id',  Controller.getOne);
 
 // ── Admin only — create, edit, delete ─────────────────────────────────────────
 router.post(  '/',    requireAuth, requireRole('admin'), Controller.create);
