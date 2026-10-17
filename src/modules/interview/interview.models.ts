@@ -3,7 +3,7 @@
 //
 // groq.client.ts (your real file) does NOT export named model constants.
 // It accepts an optional `model` field on GroqChatParams and falls back to
-// a private DEFAULT_MODEL ('llama-3.3-70b-versatile') if omitted. That
+// a private DEFAULT_MODEL ('openai/gpt-oss-120b') if omitted. That
 // param-passthrough already works correctly — no changes needed in
 // groq.client.ts itself for tiering to work.
 //
@@ -28,4 +28,4 @@ export const MODEL_SMALL = process.env.GROQ_MODEL_SMALL || 'llama-3.1-8b-instant
 /** Same as groq.client.ts's private DEFAULT_MODEL. Kept explicit here so call
  * sites that care about generation quality are self-documenting, rather than
  * relying on omitting `model` and hoping the client's default matches intent. */
-export const MODEL_LARGE = process.env.GROQ_MODEL_LARGE || 'llama-3.3-70b-versatile';
+export const MODEL_LARGE = process.env.GROQ_MODEL_LARGE || 'openai/gpt-oss-120b';
