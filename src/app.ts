@@ -12,6 +12,7 @@ import membersRouter from './modules/members/members.router';
 import frenchAIRouter from './modules/french-ai/french-ai.router';
 import interviewRouter    from './modules/interview/interview.routes';
 import pickupRouter from './modules/pickup/pickup.router';
+import opportunitiesRouter from './modules/opportunities/opportunities.router';
 import { errorHandler }   from './middleware/error.middleware';
 
 const app = express();
@@ -32,6 +33,7 @@ app.use('/housing',       housingRouter);
 app.use('/french-ai',     frenchAIRouter);
 app.use('/interview',     interviewRouter);
 app.use('/pickup', pickupRouter);
+app.use('/opportunities', opportunitiesRouter);
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
 app.use(errorHandler);
