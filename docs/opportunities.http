@@ -1,0 +1,82 @@
+# Manual smoke test for the Opportunities API.
+# Works with the VS Code / Cursor "REST Client" extension or JetBrains HTTP client.
+# Fill in the tokens (Supabase access tokens for an admin and a regular member),
+# run `npm run dev`, then send the requests top to bottom.
+#
+# Publishing sends a real push notification to every member. Use a test
+# project, or skip the publish request against production.
+
+@baseUrl     = http://localhost:5000
+@adminToken  = <admin access token>
+@memberToken = <member access token>
+
+### 1. Admin creates a draft
+# @name create
+POST {{baseUrl}}/opportunities/admin
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "title": "Junior Backend Developer",
+  "organization": "Acme Lille",
+  "type": "job",
+  "description": "Build and maintain APIs for our logistics platform.",
+  "qualifications": ["Bachelor in Computer Science"],
+  "skills": ["TypeScript", "PostgreSQL"],
+  "location": "Lille, France",
+  "application_deadline": "2030-12-31",
+  "application_method": "url",
+  "application_url": "https://acme.example/jobs/42"
+}
+
+@id = {{create.response.body.data.id}}
+
+### 2. Member cannot see the draft (expect 404)
+GET {{baseUrl}}/opportunities/{{id}}
+Authorization: Bearer {{memberToken}}
+
+### 3. Member cannot use admin endpoints (expect 403)
+GET {{baseUrl}}/opportunities/admin
+Authorization: Bearer {{memberToken}}
+
+### 4. Admin publishes (sends a push on first publish)
+POST {{baseUrl}}/opportunities/admin/{{id}}/publish
+Authorization: Bearer {{adminToken}}
+
+### 5. Member lists open opportunities
+GET {{baseUrl}}/opportunities?type=job&location=lille
+Authorization: Bearer {{memberToken}}
+
+### 6. Member opens the listing (expect 200, availability "open")
+GET {{baseUrl}}/opportunities/{{id}}
+Authorization: Bearer {{memberToken}}
+
+### 7. Admin edits a field
+PATCH {{baseUrl}}/opportunities/admin/{{id}}
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{ "title": "Backend Developer (Junior)" }
+
+### 8. Admin closes it
+POST {{baseUrl}}/opportunities/admin/{{id}}/close
+Authorization: Bearer {{adminToken}}
+
+### 9. Member opens the closed listing (expect 410 OPPORTUNITY_UNAVAILABLE)
+GET {{baseUrl}}/opportunities/{{id}}
+Authorization: Bearer {{memberToken}}
+
+### 10. Admin lists everything, soonest deadline first
+GET {{baseUrl}}/opportunities/admin?sort_by=application_deadline&sort_order=asc
+Authorization: Bearer {{adminToken}}
+
+### 11. Admin archives it
+POST {{baseUrl}}/opportunities/admin/{{id}}/archive
+Authorization: Bearer {{adminToken}}
+
+### 12. Editing an archived listing fails (expect 409 OPPORTUNITY_ARCHIVED)
+PATCH {{baseUrl}}/opportunities/admin/{{id}}
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{ "title": "Too late" }

@@ -30,6 +30,7 @@ The API listens on `PORT` (5000 by default). Check it with
 npm run dev       # watch mode
 npm run build     # type-check and create dist/
 npm start         # run the compiled service
+npm test          # run the test suite (no network; Supabase is faked)
 npm run db:migrate
 npm run db:seed
 ```
@@ -42,4 +43,8 @@ does not add dependencies to the project.
 `.env.example` documents all variables validated by `src/config/env.ts`.
 Server-only keys must stay in the backend environment and must never be
 copied into a browser or mobile `.env` file.
+
+## API docs
+
+- [Opportunities (jobs and internships)](docs/opportunities-api.md)
 
