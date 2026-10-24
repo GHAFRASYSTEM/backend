@@ -14,6 +14,8 @@ import interviewRouter    from './modules/interview/interview.routes';
 import pickupRouter from './modules/pickup/pickup.router';
 import { errorHandler }   from './middleware/error.middleware';
 
+import { organizationFinanceRouter } from './modules/organization-finance/organization-finance.router';
+
 // Import the initialization function
 import { initializePronunciationPhrases } from './modules/french-ai/french-ai.data';
 
@@ -35,6 +37,7 @@ app.use('/housing',       housingRouter);
 app.use('/french-ai',     frenchAIRouter);
 app.use('/interview',     interviewRouter);
 app.use('/pickup', pickupRouter);
+app.use('/organization-finance', organizationFinanceRouter);
 
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
