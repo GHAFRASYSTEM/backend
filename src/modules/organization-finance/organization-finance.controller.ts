@@ -1,6 +1,13 @@
 import { Request, Response, NextFunction } from 'express';
 import { OrganizationFinanceService } from './organization-finance.service';
-import { createRecordSchema, listQuerySchema } from './organization-finance.schema';
+import {
+  createRecordSchema,
+  listQuerySchema,
+  recordIdSchema,
+  summaryQuerySchema,
+  updateRecordSchema,
+} from './organization-finance.schema';
+import { ok } from '../../shared/response';
 
 export class OrganizationFinanceController {
   /**
@@ -14,10 +21,7 @@ export class OrganizationFinanceController {
 
       const record = await OrganizationFinanceService.createRecord(validatedData, file, userId);
 
-      res.status(201).json({
-        success: true,
-        data: record,
-      });
+      ok(res, record, 201);
     } catch (error) {
       next(error);
     }
@@ -31,11 +35,25 @@ export class OrganizationFinanceController {
       const validatedQuery = listQuerySchema.parse(req.query);
       const result = await OrganizationFinanceService.listRecords(validatedQuery);
 
-      res.status(200).json({
-        success: true,
-        data: result.data,
+      ok(res, result.data, 200, {
         meta: result.meta,
         period_totals: result.period_totals,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /organization-finance/summary
+   */
+  static async summary(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const query = summaryQuerySchema.parse(req.query);
+      const result = await OrganizationFinanceService.getSummary(query);
+      ok(res, {
+        currency: process.env.ORG_CURRENCY || 'EUR',
+        ...result,
       });
     } catch (error) {
       next(error);
@@ -47,13 +65,33 @@ export class OrganizationFinanceController {
    */
   static async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const id = req.params.id as string;
+      const id = recordIdSchema.parse(req.params.id);
       const record = await OrganizationFinanceService.getRecordById(id);
 
-      res.status(200).json({
-        success: true,
-        data: record,
+      ok(res, record);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * PATCH /organization-finance/records/:id
+   */
+  static async update(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const id = recordIdSchema.parse(req.params.id);
+      const input = updateRecordSchema.parse({
+        ...req.body,
+        ...(req.file ? { document: true } : {}),
       });
+      const { document: _hasDocument, ...updates } = input;
+
+      const record = await OrganizationFinanceService.updateRecord(
+        id,
+        updates,
+        req.file,
+      );
+      ok(res, record);
     } catch (error) {
       next(error);
     }
@@ -64,7 +102,7 @@ export class OrganizationFinanceController {
    */
   static async remove(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const id = req.params.id as string;
+      const id = recordIdSchema.parse(req.params.id);
       await OrganizationFinanceService.deleteRecord(id);
 
       res.status(204).send();
