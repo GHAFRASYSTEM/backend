@@ -1,4 +1,5 @@
-import { vi } from 'vitest';
+import { vi, beforeEach } from 'vitest';
+import { db } from './helpers/fake-supabase';
 
 // env.ts validates on import and exits on failure. Pointing dotenv at a
 // missing file keeps the real .env (and its credentials) out of tests.
@@ -20,6 +21,14 @@ Object.assign(process.env, {
   HF_API_TOKEN:          'hf_test',
   CARD_SECRET:           'test-card-secret',
 });
+
+// No test may reach a real Supabase project.
+vi.mock('../src/config/supabase', async () => {
+  const { fakeSupabase } = await import('./helpers/fake-supabase');
+  return { supabase: fakeSupabase };
+});
+
+beforeEach(() => db.reset());
 
 // firebase-admin parses the private key on init, which a dummy key fails.
 vi.mock('../src/config/firebase', () => ({
