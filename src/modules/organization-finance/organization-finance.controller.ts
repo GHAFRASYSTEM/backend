@@ -7,11 +7,19 @@ import {
   summaryQuerySchema,
   updateRecordSchema,
 } from './organization-finance.schema';
+import { Errors } from '../../shared/errors';
 import { ok } from '../../shared/response';
+
+// A malformed id can't match any record, so it's a 404 (not a validation error).
+function parseRecordId(raw: unknown): string {
+  const result = recordIdSchema.safeParse(raw);
+  if (!result.success) throw Errors.notFound('Financial record');
+  return result.data;
+}
 
 export class OrganizationFinanceController {
   /**
-   * POST /organization-finance/records
+   * POST /finance
    */
   static async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
@@ -28,7 +36,7 @@ export class OrganizationFinanceController {
   }
 
   /**
-   * GET /organization-finance/records
+   * GET /finance
    */
   static async list(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
@@ -45,15 +53,16 @@ export class OrganizationFinanceController {
   }
 
   /**
-   * GET /organization-finance/summary
+   * GET /finance/summary
    */
   static async summary(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const query = summaryQuerySchema.parse(req.query);
       const result = await OrganizationFinanceService.getSummary(query);
+
       ok(res, {
-        currency: process.env.ORG_CURRENCY || 'EUR',
         ...result,
+        currency: process.env.ORG_CURRENCY || 'EUR',
       });
     } catch (error) {
       next(error);
@@ -61,11 +70,11 @@ export class OrganizationFinanceController {
   }
 
   /**
-   * GET /organization-finance/records/:id
+   * GET /finance/:id
    */
   static async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const id = recordIdSchema.parse(req.params.id);
+      const id = parseRecordId(req.params.id);
       const record = await OrganizationFinanceService.getRecordById(id);
 
       ok(res, record);
@@ -75,11 +84,11 @@ export class OrganizationFinanceController {
   }
 
   /**
-   * PATCH /organization-finance/records/:id
+   * PATCH /finance/:id
    */
   static async update(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const id = recordIdSchema.parse(req.params.id);
+      const id = parseRecordId(req.params.id);
       const input = updateRecordSchema.parse({
         ...req.body,
         ...(req.file ? { document: true } : {}),
@@ -98,11 +107,11 @@ export class OrganizationFinanceController {
   }
 
   /**
-   * DELETE /organization-finance/records/:id
+   * DELETE /finance/:id
    */
   static async remove(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const id = recordIdSchema.parse(req.params.id);
+      const id = parseRecordId(req.params.id);
       await OrganizationFinanceService.deleteRecord(id);
 
       res.status(204).send();

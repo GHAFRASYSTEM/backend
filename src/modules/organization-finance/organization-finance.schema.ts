@@ -1,17 +1,21 @@
 import { z } from 'zod';
 
-function decimalPlaces(value: number): number {
-  const [mantissa, exponentText] = value.toString().toLowerCase().split('e');
-  const fractionalDigits = mantissa.split('.')[1]?.length ?? 0;
-  return Math.max(0, fractionalDigits - Number(exponentText ?? 0));
-}
-
-const amountSchema = z.union([z.number(), z.string()])
+// Multipart form fields always arrive as strings, so we validate the raw text
+// against the contract's regex first, then convert to a number.
+const amountSchema = z.string()
+  .trim()
+  .regex(/^\d+(\.\d{1,2})?$/, 'Amount must be a number with at most 2 decimal places.')
   .transform(Number)
-  .refine(Number.isFinite, 'Amount must be a finite number.')
-  .refine((value) => value > 0, 'Amount must be a number greater than 0.')
-  .refine((value) => decimalPlaces(value) <= 2, 'Amount cannot have more than 2 decimal places.')
+  .refine((value) => value > 0, 'Amount must be greater than 0.')
   .refine((value) => value <= 9999999999.99, 'Amount cannot exceed 9999999999.99.');
+
+// Compared against today's date in UTC.
+const transactionDateSchema = z.string()
+  .date('Transaction date must be a valid date (YYYY-MM-DD).')
+  .refine(
+    (value) => value <= new Date().toISOString().slice(0, 10),
+    'Transaction date cannot be in the future.',
+  );
 
 // 1. Schema for creating a financial record
 export const createRecordSchema = z.object({
@@ -21,7 +25,7 @@ export const createRecordSchema = z.object({
   }),
   purpose: z.string().trim().min(1, 'Purpose is required.').max(500, 'Purpose cannot exceed 500 characters.'),
   counterparty: z.string().trim().min(1, 'Counterparty is required.').max(255, 'Counterparty cannot exceed 255 characters.'),
-  transaction_date: z.iso.date().optional(),
+  transaction_date: transactionDateSchema,
 });
 
 // 2. Schema for updating a financial record (all fields optional)
@@ -41,12 +45,17 @@ export const updateRecordSchema = createRecordSchema.partial().extend({
   }
 });
 
-// 3. Schema for query filters, sorting, and pagination when listing records
-const periodFiltersSchema = z.object({
+// 3. Shared period filters (month / date range)
+const periodFilterShape = {
   month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Month must be in YYYY-MM format.').optional(),
-  date_from: z.iso.date().optional(),
-  date_to: z.iso.date().optional(),
-}).superRefine((query, context) => {
+  date_from: z.string().date().optional(),
+  date_to: z.string().date().optional(),
+};
+
+type PeriodQuery = { month?: string; date_from?: string; date_to?: string };
+
+// Applied after each schema is built, so we never call .extend() on a refined schema.
+function checkPeriod(query: PeriodQuery, context: z.RefinementCtx) {
   if (query.month && (query.date_from || query.date_to)) {
     context.addIssue({
       code: 'custom',
@@ -62,11 +71,13 @@ const periodFiltersSchema = z.object({
       path: ['date_from'],
     });
   }
-});
+}
 
 export const recordIdSchema = z.uuid();
 
-export const listQuerySchema = periodFiltersSchema.extend({
+// 4. Schema for query filters, sorting, and pagination when listing records
+export const listQuerySchema = z.object({
+  ...periodFilterShape,
   category: z.enum(['income', 'expense']).optional(),
   search: z.string().optional(),
   min_amount: z.coerce.number().finite().optional(),
@@ -78,11 +89,27 @@ export const listQuerySchema = periodFiltersSchema.extend({
   sort_order: z.enum(['asc', 'desc']).default('desc'),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
+}).superRefine((query, context) => {
+  checkPeriod(query, context);
+
+  if (
+    query.min_amount !== undefined &&
+    query.max_amount !== undefined &&
+    query.min_amount > query.max_amount
+  ) {
+    context.addIssue({
+      code: 'custom',
+      message: 'min_amount must be less than or equal to max_amount.',
+      path: ['min_amount'],
+    });
+  }
 });
 
-export const summaryQuerySchema = periodFiltersSchema.extend({
+// 5. Schema for the summary endpoint
+export const summaryQuerySchema = z.object({
+  ...periodFilterShape,
   months: z.coerce.number().int().min(1).max(24).default(6),
-});
+}).superRefine(checkPeriod);
 
 // Export inferred types for use in controllers and services
 export type CreateRecordDto = z.infer<typeof createRecordSchema>;

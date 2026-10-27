@@ -40,15 +40,16 @@ const router = Router();
 router.use(requireAuth);
 router.use(requireRole('admin'));
 
+// Summary route (must be before /:id so Express doesn't treat 'summary' as an ID)
 router.get('/summary', Ctrl.summary);
 
-// /records -> list all, or create one (with an optional receipt file named "document")
-router.route('/records')
+// Root /finance endpoints for listing and creating records
+router.route('/')
   .get(Ctrl.list)
   .post(uploadReceipt, Ctrl.create);
 
-// /records/:id -> get, update, or delete one
-router.route('/records/:id')
+// /finance/:id endpoints for single record operations
+router.route('/:id')
   .get(Ctrl.getById)
   .patch(uploadReceipt, Ctrl.update)
   .delete(Ctrl.remove);

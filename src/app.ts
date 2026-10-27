@@ -37,7 +37,7 @@ app.use('/housing',       housingRouter);
 app.use('/french-ai',     frenchAIRouter);
 app.use('/interview',     interviewRouter);
 app.use('/pickup', pickupRouter);
-app.use('/organization-finance', organizationFinanceRouter);
+app.use('/finance', organizationFinanceRouter);
 
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 

@@ -111,43 +111,63 @@ function getPeriodRpcArgs(filters: RecordFilters) {
 export class OrganizationFinanceService {
   /**
    * Helper to generate a signed URL for a receipt document if it exists.
+   * Strips the raw document_* columns and returns a `document` object (or null).
    */
   private static async enrichWithSignedUrl(record: any) {
-    if (!record.document_path) {
-      return { ...record, document: null };
+    const {
+      document_path,
+      document_name,
+      document_mime_type,
+      document_size_bytes,
+      ...cleanedRecord
+    } = record;
+
+    if (!document_path) {
+      return { ...cleanedRecord, document: null };
     }
 
     const { data, error } = await supabase.storage
       .from(BUCKET_NAME)
-      .createSignedUrl(record.document_path, 3600);
+      .createSignedUrl(document_path, 3600);
 
     const documentInfo = {
-      name: record.document_name,
-      mime_type: record.document_mime_type,
-      size_bytes: record.document_size_bytes,
       url: error ? null : data?.signedUrl,
+      file_name: document_name,
+      size: document_size_bytes,
+      mime_type: document_mime_type,
       url_expires_at: error ? null : new Date(Date.now() + 3600 * 1000).toISOString(),
     };
 
-    const { document_path, document_name, document_mime_type, document_size_bytes, ...cleanedRecord } = record;
     return { ...cleanedRecord, document: documentInfo };
   }
 
   private static async formatSingleRecord(record: any) {
     const enriched = await this.enrichWithSignedUrl(record);
-    const { profiles, amount, ...recordData } = enriched;
+    const { profiles, amount, deleted_at, updated_at, ...recordData } = enriched;
 
     return {
       ...recordData,
       amount: Number(amount).toFixed(2),
-      created_by: profiles,
+      has_document: enriched.document !== null,
+      created_by: profiles ?? null,
     };
+  }
+
+  /**
+   * Best-effort removal of a file from storage. Never throws: the DB is the
+   * source of truth, so a failed file cleanup must not fail the request.
+   */
+  private static async removeFileQuietly(path: string, context: string) {
+    const { error } = await supabase.storage.from(BUCKET_NAME).remove([path]);
+    if (error) {
+      console.error(`[finance] ${context}: failed to remove "${path}": ${error.message}`);
+    }
   }
 
   /**
    * Create a new financial record (with optional file upload).
    */
-  static async createRecord(dto: CreateRecordDto, file?: Express.Multer.File, userId?: string) {
+  static async createRecord(dto: CreateRecordDto, file: Express.Multer.File | undefined, userId: string) {
     const recordId = randomUUID();
     let documentData = {};
     let uploadedPath: string | undefined;
@@ -196,15 +216,7 @@ export class OrganizationFinanceService {
       record = data;
     } catch (error) {
       if (uploadedPath) {
-        const { error: cleanupError } = await supabase.storage
-          .from(BUCKET_NAME)
-          .remove([uploadedPath]);
-
-        if (cleanupError) {
-          throw Errors.internal(
-            `Record creation failed and receipt cleanup failed: ${cleanupError.message}`,
-          );
-        }
+        await this.removeFileQuietly(uploadedPath, 'create rollback');
       }
       throw error;
     }
@@ -287,25 +299,14 @@ export class OrganizationFinanceService {
       updatedRecord = data;
     } catch (error) {
       if (uploadedPath) {
-        const { error: cleanupError } = await supabase.storage
-          .from(BUCKET_NAME)
-          .remove([uploadedPath]);
-        if (cleanupError) {
-          throw Errors.internal(
-            `Record update failed and new receipt cleanup failed: ${cleanupError.message}`,
-          );
-        }
+        await this.removeFileQuietly(uploadedPath, 'update rollback');
       }
       throw error;
     }
 
+    // The record is already saved: removing the old receipt is best-effort.
     if ((file || removeDocument) && existing.document_path) {
-      const { error: deleteError } = await supabase.storage
-        .from(BUCKET_NAME)
-        .remove([existing.document_path]);
-      if (deleteError) {
-        throw Errors.internal(`Failed to delete the replaced receipt: ${deleteError.message}`);
-      }
+      await this.removeFileQuietly(existing.document_path, 'replaced receipt cleanup');
     }
 
     return this.formatSingleRecord(updatedRecord);
@@ -319,7 +320,10 @@ export class OrganizationFinanceService {
 
     let recordsQuery = supabase
       .from('organization_financial_records')
-      .select('id, amount, category, purpose, counterparty, transaction_date, created_at, document_path', { count: 'exact' })
+      .select(
+        'id, amount, category, purpose, counterparty, transaction_date, created_at, document_path, profiles:created_by(id, name)',
+        { count: 'exact' },
+      )
       .is('deleted_at', null);
 
     recordsQuery = applyRecordFilters(recordsQuery, query, {
@@ -349,7 +353,7 @@ export class OrganizationFinanceService {
     );
     if (totalsError) throw Errors.internal(totalsError.message);
 
-    const formattedData = (data ?? []).map((record) => ({
+    const formattedData = (data ?? []).map((record: any) => ({
       id: record.id,
       amount: Number(record.amount).toFixed(2),
       category: record.category,
@@ -358,6 +362,7 @@ export class OrganizationFinanceService {
       transaction_date: record.transaction_date,
       created_at: record.created_at,
       has_document: Boolean(record.document_path),
+      created_by: record.profiles ?? null,
     }));
 
     const totalRecords = count ?? 0;
@@ -393,29 +398,49 @@ export class OrganizationFinanceService {
       .select('*, profiles:created_by(id, name)')
       .eq('id', id)
       .is('deleted_at', null)
-      .single();
+      .maybeSingle();
 
-    if (error || !data) {
-      throw Errors.notFound('Financial record');
-    }
+    if (error) throw Errors.internal(error.message);
+    if (!data) throw Errors.notFound('Financial record');
 
     return this.formatSingleRecord(data);
   }
 
   /**
-   * Soft delete a record.
+   * Soft delete a record and remove its stored receipt.
    */
   static async deleteRecord(id: string) {
+    const { data: existing, error: lookupError } = await supabase
+      .from('organization_financial_records')
+      .select('document_path')
+      .eq('id', id)
+      .is('deleted_at', null)
+      .maybeSingle();
+
+    if (lookupError) throw Errors.internal(lookupError.message);
+    if (!existing) throw Errors.notFound('Financial record');
+
     const { data, error } = await supabase
       .from('organization_financial_records')
-      .update({ deleted_at: new Date().toISOString() })
+      .update({
+        deleted_at: new Date().toISOString(),
+        document_path: null,
+        document_name: null,
+        document_mime_type: null,
+        document_size_bytes: null,
+      })
       .eq('id', id)
       .is('deleted_at', null)
       .select('id')
       .single();
 
     if (error || !data) {
-      throw Errors.notFound('Financial record');
+      if (error?.code === 'PGRST116') throw Errors.notFound('Financial record');
+      throw Errors.internal(error?.message ?? 'Failed to delete financial record.');
+    }
+
+    if (existing.document_path) {
+      await this.removeFileQuietly(existing.document_path, 'delete cleanup');
     }
 
     return true;
