@@ -2,11 +2,13 @@
   "name": "ghafra-backend",
   "version": "1.0.0",
   "description": "GHAFRA backend — Supabase, FCM, Resend",
-  "main": "dist/app.js",
+  "main": "dist/server.js",
   "scripts": {
-    "dev": "npx tsx watch src/app.ts",
+    "dev": "npx tsx watch src/server.ts",
     "build": "tsc && cp -r src/modules/french-ai/data dist/modules/french-ai/",
-    "start": "node dist/app.js",
+    "start": "node dist/server.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "db:migrate": "npx supabase db push",
     "db:reset": "npx supabase db reset",
     "db:seed": "npx supabase db reset --with-seed"
@@ -39,7 +41,15 @@
     "@types/express": "^5.0.6",
     "@types/morgan": "^1.9.10",
     "@types/node": "^25.5.2",
+    "@types/supertest": "^7.2.1",
+    "supertest": "^7.3.1",
     "tsx": "^4.21.0",
-    "typescript": "^6.0.2"
+    "typescript": "^6.0.2",
+    "vitest": "^5.0.5"
+  },
+  "allowScripts": {
+    "esbuild@0.27.7": true,
+    "protobufjs@7.5.4": true,
+    "@firebase/util@1.15.0": true
   }
 }
