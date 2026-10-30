@@ -5,7 +5,7 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "npx tsx watch src/server.ts",
-    "build": "tsc && cp -r src/modules/french-ai/data dist/modules/french-ai/",
+"build": "tsc && mkdir -p dist/modules/french-ai/data && cp -r src/modules/french-ai/data/. dist/modules/french-ai/data/",
     "start": "node dist/server.js",
     "test": "vitest run",
     "test:watch": "vitest",
