@@ -15,6 +15,13 @@ import pickupRouter from './modules/pickup/pickup.router';
 import opportunitiesRouter from './modules/opportunities/opportunities.router';
 import { errorHandler }   from './middleware/error.middleware';
 
+
+import { organizationFinanceRouter } from './modules/organization-finance/organization-finance.router';
+
+// Import the initialization function
+import { initializePronunciationPhrases } from './modules/french-ai/french-ai.data';
+
+
 const app = express();
 
 app.use(helmet());
@@ -33,6 +40,8 @@ app.use('/housing',       housingRouter);
 app.use('/french-ai',     frenchAIRouter);
 app.use('/interview',     interviewRouter);
 app.use('/pickup', pickupRouter);
+
+app.use('/finance', organizationFinanceRouter);
 app.use('/opportunities', opportunitiesRouter);
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
