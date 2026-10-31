@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
+import multer from 'multer';
 import { AppError } from '../shared/errors';
 import { ZodError } from 'zod';
 
@@ -24,6 +25,17 @@ export function errorHandler(
           field:   i.path.join('.'),
           message: i.message,
         })),
+      },
+    });
+  }
+
+  if (err instanceof multer.MulterError) {
+    const tooBig = err.code === 'LIMIT_FILE_SIZE';
+    return res.status(tooBig ? 422 : 400).json({
+      success: false,
+      error: {
+        message: tooBig ? 'Image must be 5 MB or smaller' : err.message,
+        code:    tooBig ? 'IMAGE_TOO_LARGE' : 'BAD_REQUEST',
       },
     });
   }

@@ -37,6 +37,7 @@ in the mobile app; admins create and manage them from the dashboard.
 | `contact_name` | string \| null | Optional |
 | `contact_email` | string \| null | Optional |
 | `contact_phone` | string \| null | Optional |
+| `image_url` | string \| null | Public image URL. `null` when the listing has no image |
 | `status` | `"draft"` \| `"published"` \| `"closed"` \| `"archived"` | Read-only; changed via the action endpoints |
 | `published_at` | ISO datetime \| null | Set on first publish and never changed afterwards |
 | `closed_at` | ISO datetime \| null | Set when closed; cleared when re-published |
@@ -142,6 +143,7 @@ Authorization: Bearer <token>
       "contact_name": null,
       "contact_email": null,
       "contact_phone": null,
+      "image_url": "https://your-project.supabase.co/storage/v1/object/public/opportunity-images/a3bb189e-8bf9-4888-9912-ace4e6543002/cover.jpg",
       "status": "published",
       "published_at": "2026-10-24T09:00:00+00:00",
       "closed_at": null,
@@ -215,12 +217,32 @@ Required: `title`, `organization`, `type`, `description`, `location`,
 `application_method`, and the detail field that matches the method.
 Unknown fields (including `status`) are rejected with `422`.
 
+`image_url` is optional. Two ways to set it, and only one at a time:
+
+**Pasted URL** (JSON, same request as above). Add `"image_url": "https://cdn.example/cover.jpg"`.
+The URL must be `http` or `https`. It is saved as-is and is not downloaded.
+
+**File upload** (`multipart/form-data`, not JSON):
+
+| Part | Type | Contents |
+|---|---|---|
+| `data` | text | The same JSON object as the JSON request, without `image_url` |
+| `image` | file | One JPEG, PNG, or WebP, 5 MB or smaller |
+
+The file is stored in the public Supabase bucket `opportunity-images`. The response
+`image_url` is the public URL. The mobile app and the dashboard can load it
+with no token.
+
+Sending a file and `image_url` together returns `422`.
+
 ### `PATCH /opportunities/admin/:id`
 
 Updates any subset of the fields accepted by create. Works on `draft`,
 `published` and `closed` listings; archived ones return `409`.
 
-- Send `null` to clear an optional field (e.g. `"application_deadline": null`).
+- Send `null` to clear an optional field, including `"image_url": null`.
+- To replace the image, send a new file (multipart, `data` plus `image`) or a new `image_url`. The previous uploaded file is deleted. A pasted external URL is not deleted, because it is not in our storage.
+- A file on its own is enough: `data` may be `{}`.
 - If you change `application_method`, send its matching detail field too,
   unless it's already set.
 - Editing a published listing takes effect immediately for members.
@@ -265,8 +287,10 @@ All three return `200` with the updated opportunity. They take no body.
 | 409 | `OPPORTUNITY_ARCHIVED` | Editing an archived listing |
 | 409 | `CONFLICT` | Another admin changed the listing at the same time. Reload and retry |
 | 410 | `OPPORTUNITY_UNAVAILABLE` | Member opened a closed or expired listing |
-| 422 | `VALIDATION_ERROR` | Invalid body, query or id |
+| 422 | `VALIDATION_ERROR` | Invalid body, query or id, or a file and `image_url` together |
 | 422 | `DEADLINE_PASSED` | Publishing with a past deadline |
+| 422 | `IMAGE_TOO_LARGE` | Image over 5 MB |
+| 422 | `UNSUPPORTED_IMAGE` | Not a JPEG, PNG, or WebP (the file contents are checked, not just the filename) |
 
 ## Push notification
 

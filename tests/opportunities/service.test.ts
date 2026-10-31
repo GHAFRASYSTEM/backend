@@ -36,6 +36,7 @@ describe('listPublished (member)', () => {
 
     const [select] = db.calls(db.queries('opportunities')[0], 'select')[0] as [string];
     expect(select).not.toMatch(/created_by|updated_by|archived_at|\*/);
+    expect(select).toContain('image_url');
   });
 
   it('translates page/limit into an inclusive range', async () => {
@@ -257,5 +258,89 @@ describe('transition', () => {
   it('returns 404 for a missing opportunity', async () => {
     db.queue('opportunities', { data: null });
     await expect(svc.transition(ADMIN_ID, OPPORTUNITY_ID, 'close')).rejects.toMatchObject({ statusCode: 404 });
+  });
+});
+
+const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
+const STORED = `http://localhost:54321/storage/v1/object/public/opportunity-images/${OPPORTUNITY_ID}/old.jpg`;
+
+describe('images', () => {
+  it('saves a pasted image_url without touching storage', async () => {
+    db.queue('opportunities', { data: makeOpportunity({ status: 'draft', image_url: 'https://cdn.example/a.jpg' }) });
+    const input = CreateOpportunitySchema.parse(validCreateBody({ image_url: 'https://cdn.example/a.jpg' }));
+
+    await svc.create(ADMIN_ID, input);
+
+    const [inserted] = db.calls(db.queries('opportunities')[0], 'insert')[0] as [Record<string, unknown>];
+    expect(inserted.image_url).toBe('https://cdn.example/a.jpg');
+    expect(db.storage()).toHaveLength(0);
+  });
+
+  it('uploads a file and stores the public URL', async () => {
+    db.queue('opportunities',
+      { data: makeOpportunity({ status: 'draft', image_url: null }) },
+      { data: makeOpportunity({ status: 'draft', image_url: STORED }) },
+    );
+    const input = CreateOpportunitySchema.parse(validCreateBody());
+
+    const result = await svc.create(ADMIN_ID, input, JPEG);
+
+    const upload = db.storage().find(c => c.method === 'upload')!;
+    expect(upload.bucket).toBe('opportunity-images');
+    expect(String(upload.args[0])).toMatch(new RegExp(`^${OPPORTUNITY_ID}/.+\.jpg$`));
+    expect(upload.args[2]).toMatchObject({ contentType: 'image/jpeg' });
+
+    const patch = db.calls(db.queries('opportunities')[1], 'update')[0][0] as { image_url: string };
+    expect(patch.image_url).toContain('/object/public/opportunity-images/');
+    expect(result.image_url).toBe(STORED);
+  });
+
+  it('rejects a file and a URL together before writing', async () => {
+    const input = CreateOpportunitySchema.parse(validCreateBody({ image_url: 'https://cdn.example/a.jpg' }));
+    await expect(svc.create(ADMIN_ID, input, JPEG)).rejects.toMatchObject({ statusCode: 422 });
+    expect(db.queries('opportunities')).toHaveLength(0);
+    expect(db.storage()).toHaveLength(0);
+  });
+
+  it('drops the new row when the upload fails', async () => {
+    db.queue('opportunities', { data: makeOpportunity({ status: 'draft', image_url: null }) });
+    db.queue('storage.upload', { data: null, error: { message: 'storage down' } });
+    const input = CreateOpportunitySchema.parse(validCreateBody());
+
+    await expect(svc.create(ADMIN_ID, input, JPEG)).rejects.toMatchObject({ statusCode: 500 });
+
+    expect(db.calls(db.queries('opportunities')[1], 'delete')).toHaveLength(1);
+  });
+
+  it('deletes the previous upload when a new file replaces it', async () => {
+    db.queue('opportunities',
+      { data: makeOpportunity({ image_url: STORED }) },
+      { data: makeOpportunity({ image_url: STORED.replace('old.jpg', 'new.jpg') }) },
+    );
+
+    await svc.update(ADMIN_ID, OPPORTUNITY_ID, { title: 'Junior Backend Developer' }, JPEG);
+    await flush();
+
+    const removed = db.storage().find(c => c.method === 'remove')!;
+    expect(removed.args[0]).toEqual([`${OPPORTUNITY_ID}/old.jpg`]);
+  });
+
+  it('deletes our object when the image is cleared, and leaves external URLs alone', async () => {
+    db.queue('opportunities',
+      { data: makeOpportunity({ image_url: STORED }) },
+      { data: makeOpportunity({ image_url: null }) },
+    );
+    await svc.update(ADMIN_ID, OPPORTUNITY_ID, { image_url: null });
+    await flush();
+    expect(db.storage().some(c => c.method === 'remove')).toBe(true);
+
+    db.reset();
+    db.queue('opportunities',
+      { data: makeOpportunity({ image_url: 'https://cdn.example/a.jpg' }) },
+      { data: makeOpportunity({ image_url: null }) },
+    );
+    await svc.update(ADMIN_ID, OPPORTUNITY_ID, { image_url: null });
+    await flush();
+    expect(db.storage().some(c => c.method === 'remove')).toBe(false);
   });
 });

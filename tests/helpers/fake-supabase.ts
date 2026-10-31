@@ -28,6 +28,7 @@ export interface RecordedQuery { table: string; calls: RecordedCall[] }
 
 const queues   = new Map<string, QueryResult[]>();
 const recorded: RecordedQuery[] = [];
+const storageCalls: { bucket: string; method: string; args: unknown[] }[] = [];
 
 function defaultResult(query: RecordedQuery): QueryResult {
   // requireRole looks up profiles.role by id.
@@ -71,7 +72,27 @@ export const fakeSupabase = {
     },
   },
   storage: {
-    from: () => ({}),
+    from(bucket: string) {
+      const call = (method: string, args: unknown[]) => {
+        storageCalls.push({ bucket, method, args });
+      };
+      return {
+        async upload(...args: unknown[]) {
+          call('upload', args);
+          return queues.get('storage.upload')?.shift() ?? { data: { path: args[0] }, error: null };
+        },
+        async remove(...args: unknown[]) {
+          call('remove', args);
+          return queues.get('storage.remove')?.shift() ?? { data: [], error: null };
+        },
+        getPublicUrl(path: string) {
+          call('getPublicUrl', [path]);
+          return {
+            data: { publicUrl: `http://localhost:54321/storage/v1/object/public/${bucket}/${path}` },
+          };
+        },
+      };
+    },
   },
 };
 
@@ -79,6 +100,11 @@ export const db = {
   reset() {
     queues.clear();
     recorded.length = 0;
+    storageCalls.length = 0;
+  },
+
+  storage() {
+    return storageCalls;
   },
 
   queue(table: string, ...results: QueryResult[]) {

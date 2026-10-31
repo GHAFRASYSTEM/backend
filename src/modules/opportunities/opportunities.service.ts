@@ -1,6 +1,13 @@
+import { randomUUID }          from 'crypto';
 import { supabase }            from '../../config/supabase';
 import { notificationService } from '../notifications/notifications.service';
 import { AppError, Errors }    from '../../shared/errors';
+import {
+  IMAGE_BUCKET,
+  detectImage,
+  storagePathFromPublicUrl,
+  assertSingleImageSource,
+} from './opportunities.image';
 import {
   TRANSITIONS,
   EDITABLE_STATUSES,
@@ -25,7 +32,7 @@ const TABLE = 'opportunities';
 const MEMBER_SELECT = `
   id, title, organization, type, description, qualifications, skills, location,
   application_deadline, application_method, application_url, application_email,
-  application_instructions, contact_name, contact_email, contact_phone,
+  application_instructions, contact_name, contact_email, contact_phone, image_url,
   status, published_at, closed_at, created_at, updated_at
 `;
 
@@ -70,6 +77,32 @@ function applyCommonFilters<Q extends { eq: Function; ilike: Function; or: Funct
   if (search) query = query.or(`title.ilike.%${search}%,organization.ilike.%${search}%`);
 
   return query;
+}
+
+async function storeImage(opportunityId: string, buffer: Buffer): Promise<string> {
+  const { ext, mime } = detectImage(buffer);
+  const path = `${opportunityId}/${randomUUID()}.${ext}`;
+
+  const { error } = await supabase.storage.from(IMAGE_BUCKET).upload(path, buffer, {
+    contentType: mime,
+    upsert:      false,
+  });
+  if (error) throw Errors.internal(`Image upload failed: ${error.message}`);
+
+  const { data } = supabase.storage.from(IMAGE_BUCKET).getPublicUrl(path);
+  return data.publicUrl;
+}
+
+// Only objects we uploaded (public URL on our bucket) are removed.
+function forgetImage(url: string | null | undefined) {
+  const path = storagePathFromPublicUrl(url);
+  if (!path) return;
+  supabase.storage
+    .from(IMAGE_BUCKET)
+    .remove([path])
+    .then(({ error }) => {
+      if (error) console.error('[opportunities] image delete failed:', error.message);
+    });
 }
 
 function logAudit(adminId: string, action: string, opportunity: { id: string; title: string }) {
@@ -195,7 +228,9 @@ export const opportunitiesService = {
   },
 
   // ── Admin: create (always a draft) ────────────────────────────────────
-  async create(adminId: string, input: CreateOpportunityInput) {
+  async create(adminId: string, input: CreateOpportunityInput, file?: Buffer) {
+    assertSingleImageSource(file, input.image_url !== undefined);
+
     const { data, error } = await supabase
       .from(TABLE)
       .insert({
@@ -203,6 +238,7 @@ export const opportunitiesService = {
         qualifications:       input.qualifications       ?? [],
         skills:               input.skills               ?? [],
         application_deadline: input.application_deadline ?? null,
+        image_url:            input.image_url            ?? null,
         status:               'draft',
         created_by:           adminId,
         updated_by:           adminId,
@@ -211,13 +247,36 @@ export const opportunitiesService = {
       .single();
 
     if (error) throw error;
+    if (!file) {
+      logAudit(adminId, 'create', data);
+      return withAvailability(data, todayInParis());
+    }
 
-    logAudit(adminId, 'create', data);
-    return withAvailability(data, todayInParis());
+    // The row exists so the object path can be keyed by its id. If the upload
+    // or the follow-up update fails, drop the row so a retry doesn't leave a
+    // draft the client never received.
+    let uploadedUrl: string | null = null;
+    try {
+      uploadedUrl = await storeImage(data.id, file);
+      const { data: updated, error: updateError } = await supabase
+        .from(TABLE)
+        .update({ image_url: uploadedUrl })
+        .eq('id', data.id)
+        .select(ADMIN_SELECT)
+        .single();
+      if (updateError) throw updateError;
+
+      logAudit(adminId, 'create', updated);
+      return withAvailability(updated, todayInParis());
+    } catch (err) {
+      if (uploadedUrl) forgetImage(uploadedUrl);
+      await supabase.from(TABLE).delete().eq('id', data.id);
+      throw err;
+    }
   },
 
   // ── Admin: edit fields (not status) ───────────────────────────────────
-  async update(adminId: string, id: string, input: UpdateOpportunityInput) {
+  async update(adminId: string, id: string, input: UpdateOpportunityInput, file?: Buffer) {
     const { data: existing, error: readError } = await supabase
       .from(TABLE)
       .select('*')
@@ -227,9 +286,11 @@ export const opportunitiesService = {
     if (readError) throw readError;
     if (!existing) throw Errors.notFound('Opportunity');
     assertEditable(existing.status);
+    assertSingleImageSource(file, input.image_url !== undefined);
 
     // A partial update can change the method without its matching detail
-    // (or clear the detail), so validate against the merged result.
+    // (or clear the detail), so validate against the merged result
+    // before uploading anything.
     const missing = missingApplicationDetail({ ...existing, ...input });
     if (missing) {
       throw new AppError(
@@ -237,6 +298,12 @@ export const opportunitiesService = {
         422,
         'VALIDATION_ERROR',
       );
+    }
+
+    let uploadedUrl: string | null = null;
+    if (file) {
+      uploadedUrl = await storeImage(id, file);
+      input = { ...input, image_url: uploadedUrl };
     }
 
     const { data, error } = await supabase
@@ -247,8 +314,15 @@ export const opportunitiesService = {
       .select(ADMIN_SELECT)
       .maybeSingle();
 
-    if (error) throw error;
-    if (!data) throw CONCURRENT_UPDATE();
+    if (error || !data) {
+      if (uploadedUrl) forgetImage(uploadedUrl);
+      if (error) throw error;
+      throw CONCURRENT_UPDATE();
+    }
+
+    if (input.image_url !== undefined && existing.image_url !== input.image_url) {
+      forgetImage(existing.image_url);
+    }
 
     logAudit(adminId, 'update', data);
     return withAvailability(data, todayInParis());
