@@ -2,6 +2,7 @@ import { Router }                  from 'express';
 import { opportunitiesController } from './opportunities.controller';
 import { requireAuth }             from '../../middleware/auth.middleware';
 import { requireRole }             from '../../middleware/role.middleware';
+import { imageUpload }             from './opportunities.image';
 
 const router = Router();
 
@@ -12,9 +13,9 @@ const admin = Router();
 admin.use(requireRole('admin'));
 
 admin.get(  '/',             opportunitiesController.listAll);
-admin.post( '/',             opportunitiesController.create);
+admin.post( '/',             imageUpload, opportunitiesController.create);
 admin.get(  '/:id',          opportunitiesController.getById);
-admin.patch('/:id',          opportunitiesController.update);
+admin.patch('/:id',          imageUpload, opportunitiesController.update);
 admin.post( '/:id/publish',  opportunitiesController.transition('publish'));
 admin.post( '/:id/close',    opportunitiesController.transition('close'));
 admin.post( '/:id/archive',  opportunitiesController.transition('archive'));

@@ -11,6 +11,9 @@
 @memberToken = <member access token>
 
 ### 1. Admin creates a draft
+# image_url is optional. A file upload uses multipart/form-data instead of this
+# JSON body (field "data" = this JSON without image_url, field "image" = the
+# file). See docs/opportunities-postman.md.
 # @name create
 POST {{baseUrl}}/opportunities/admin
 Authorization: Bearer {{adminToken}}
@@ -26,7 +29,8 @@ Content-Type: application/json
   "location": "Lille, France",
   "application_deadline": "2030-12-31",
   "application_method": "url",
-  "application_url": "https://acme.example/jobs/42"
+  "application_url": "https://acme.example/jobs/42",
+  "image_url": "https://cdn.example/cover.jpg"
 }
 
 @id = {{create.response.body.data.id}}

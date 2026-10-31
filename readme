@@ -47,4 +47,5 @@ copied into a browser or mobile `.env` file.
 ## API docs
 
 - [Opportunities (jobs and internships)](docs/opportunities-api.md)
+- [Postman collection guide](docs/opportunities-postman.md)
 

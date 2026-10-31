@@ -26,6 +26,7 @@ const fields = {
   contact_name:             optionalText(200),
   contact_email:            z.email().nullable().optional(),
   contact_phone:            z.string().trim().min(6).max(30).nullable().optional(),
+  image_url:                z.url({ protocol: /^https?$/ }).nullable().optional(),
 };
 
 type ApplicationDetails = {

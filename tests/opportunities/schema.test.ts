@@ -49,6 +49,15 @@ describe('CreateOpportunitySchema', () => {
     expect(issuePaths(result)).toContain('application_deadline');
   });
 
+  it('accepts an https image_url and rejects other schemes', () => {
+    expect(CreateOpportunitySchema.safeParse(validCreateBody({
+      image_url: 'https://cdn.example/cover.jpg',
+    })).success).toBe(true);
+    expect(issuePaths(CreateOpportunitySchema.safeParse(validCreateBody({
+      image_url: 'javascript:alert(1)',
+    })))).toContain('image_url');
+  });
+
   it('rejects an unknown opportunity type', () => {
     expect(CreateOpportunitySchema.safeParse(validCreateBody({ type: 'freelance' })).success).toBe(false);
   });
