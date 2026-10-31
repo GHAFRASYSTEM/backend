@@ -195,6 +195,66 @@ describe('admin endpoints', () => {
     expect(res.body.error.code).toBe('INVALID_STATUS_TRANSITION');
   });
 
+  it('POST multipart uploads an image and returns its URL', async () => {
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
+    db.queue('opportunities',
+      { data: makeOpportunity({ status: 'draft', published_at: null, image_url: null }) },
+      { data: makeOpportunity({
+        status: 'draft',
+        published_at: null,
+        image_url: 'http://localhost:54321/storage/v1/object/public/opportunity-images/cover.jpg',
+      }) },
+    );
+
+    const res = await request(app)
+      .post(ADMIN_BASE)
+      .set(auth('admin'))
+      .field('data', JSON.stringify(validCreateBody()))
+      .attach('image', jpeg, { filename: 'cover.jpg', contentType: 'image/jpeg' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.data.image_url).toContain('/object/public/opportunity-images/');
+  });
+
+  it('POST rejects a file and an image_url together', async () => {
+    const res = await request(app)
+      .post(ADMIN_BASE)
+      .set(auth('admin'))
+      .field('data', JSON.stringify(validCreateBody({ image_url: 'https://cdn.example/a.jpg' })))
+      .attach('image', Buffer.from([0xff, 0xd8, 0xff]), { filename: 'cover.jpg', contentType: 'image/jpeg' });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    expect(db.queries('opportunities')).toHaveLength(0);
+  });
+
+  it('POST rejects a file that is not a JPEG, PNG, or WebP', async () => {
+    db.queue('opportunities', { data: makeOpportunity({ status: 'draft', published_at: null }) });
+
+    const res = await request(app)
+      .post(ADMIN_BASE)
+      .set(auth('admin'))
+      .field('data', JSON.stringify(validCreateBody()))
+      .attach('image', Buffer.from('hello'), { filename: 'notes.jpg', contentType: 'image/jpeg' });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error.code).toBe('UNSUPPORTED_IMAGE');
+  });
+
+  it('POST rejects an image over 5 MB', async () => {
+    const big = Buffer.alloc(5 * 1024 * 1024 + 1);
+    big[0] = 0xff; big[1] = 0xd8; big[2] = 0xff;
+
+    const res = await request(app)
+      .post(ADMIN_BASE)
+      .set(auth('admin'))
+      .field('data', JSON.stringify(validCreateBody()))
+      .attach('image', big, { filename: 'big.jpg', contentType: 'image/jpeg' });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error.code).toBe('IMAGE_TOO_LARGE');
+  });
+
   it('returns 404 for an unknown id', async () => {
     db.queue('opportunities', { data: null });
     const res = await request(app).get(`${ADMIN_BASE}/${OPPORTUNITY_ID}`).set(auth('admin'));
