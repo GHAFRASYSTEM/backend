@@ -1,7 +1,12 @@
 import { z } from 'zod';
 
+// accuracy is the GPS accuracy the phone reports, in metres
 export const CheckInSchema = z.object({
-  // meeting_id, check_in_code, latitude, longitude, accuracy
+  meeting_id: z.uuid(),
+  check_in_code: z.string().trim().toUpperCase().min(1).max(32),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  accuracy: z.number().positive().max(100000),
 });
 
 // No default year here — a default would be fixed at server start, so the

@@ -28,6 +28,10 @@ const RECORD_SELECT = `id, meeting_id, user_id, status, recorded_at, validation_
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const CODE_LENGTH = 6;
 
+const EARTH_RADIUS_M = 6371000;
+// Phone fixes worse than this are rejected rather than trusted
+const MAX_ACCURACY_M = 100;
+
 type HistoryStatus = 'Attended' | 'Unavailable';
 
 type MeetingTiming = {
@@ -112,13 +116,39 @@ function periodRange(year: number, month?: number) {
 }
 
 // Haversine distance between two coordinates, in metres
-function distanceInMeters(lat1: number, lng1: number, lat2: number, lng2: number) {}
+function distanceInMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * EARTH_RADIUS_M * Math.asin(Math.sqrt(a));
+}
 
-// Meeting is active, today is meeting_date (Europe/Paris), window open
-function assertCheckInOpen(meeting: unknown) {}
+// Meeting is active, today is meeting_date (Europe/Paris), window open.
+// With no starts_at / ends_at, check-in stays open all day while active.
+function assertCheckInOpen(meeting: MeetingTiming & { is_active: boolean; starts_at: string | null }) {
+  const now = new Date();
+  if (meeting.cancelled_at) throw Errors.badRequest('This meeting was cancelled');
+  if (!meeting.is_active) throw Errors.badRequest('Check-in is not open for this meeting');
+  if (meeting.meeting_date !== parisToday()) throw Errors.badRequest('Check-in is only open on the day of the meeting');
+  if (meeting.starts_at && now < new Date(meeting.starts_at)) throw Errors.badRequest('Check-in has not opened yet');
+  if (meeting.ends_at && now > new Date(meeting.ends_at)) throw Errors.badRequest('Check-in has closed');
+}
 
-// Submitted point is within meeting radius and GPS accuracy is acceptable
-function assertWithinGeofence(meeting: unknown, input: CheckInInput) {}
+// Submitted point is within meeting radius and GPS accuracy is acceptable.
+// Returns the distance so it can be stored on the record.
+function assertWithinGeofence(meeting: { latitude: number; longitude: number; radius_m: number }, input: CheckInInput): number {
+  if (input.accuracy > MAX_ACCURACY_M) {
+    throw Errors.badRequest('Your location is not precise enough. Move somewhere with better signal and try again');
+  }
+
+  const distance = distanceInMeters(meeting.latitude, meeting.longitude, input.latitude, input.longitude);
+  if (distance > meeting.radius_m) {
+    throw Errors.badRequest(`You are ${Math.round(distance)} m from the meeting; check-in requires being within ${meeting.radius_m} m`);
+  }
+
+  return distance;
+}
 
 // Members who could be expected at a meeting on or before upTo — complete
 // member profiles, filtered per meeting by joined_on in buildAttendance
@@ -230,8 +260,41 @@ function matchesStatus(rowStatus: HistoryStatus, filter?: 'attended' | 'unavaila
 
 export const attendanceService = {
 
-  // Validate window + geofence, insert record; conflict on duplicate
-  async checkIn(userId: string, input: CheckInInput) {},
+  // Validate window + code + geofence, insert record; conflict on duplicate.
+  // The code check comes before the geofence so a wrong code never reveals distance.
+  async checkIn(userId: string, input: CheckInInput) {
+    const { data: meeting, error: meetingError } = await supabase
+      .from(MEETINGS)
+      .select('id, meeting_date, starts_at, ends_at, cancelled_at, is_active, latitude, longitude, radius_m, check_in_code')
+      .eq('id', input.meeting_id)
+      .maybeSingle();
+
+    if (meetingError) throw Errors.internal(meetingError.message);
+    if (!meeting) throw Errors.notFound('Meeting');
+
+    assertCheckInOpen(meeting);
+    if (input.check_in_code !== meeting.check_in_code) throw Errors.badRequest('Invalid check-in code');
+    const distance = assertWithinGeofence(meeting, input);
+
+    const { data, error } = await supabase
+      .from(RECORDS)
+      .insert({
+        meeting_id: meeting.id,
+        user_id: userId,
+        latitude: input.latitude,
+        longitude: input.longitude,
+        accuracy_m: input.accuracy,
+        distance_m: Math.round(distance * 10) / 10,
+        validation_status: 'geofence_verified',
+      })
+      .select('id, meeting_id, status, recorded_at, distance_m')
+      .single();
+
+    if (error?.code === '23505') throw Errors.conflict('You have already checked in to this meeting');
+    if (error) throw Errors.internal(error.message);
+
+    return data;
+  },
 
   // Meetings since the member joined, grouped by month, most recent first.
   // Cancelled meetings are left out, and today's meeting only appears once
