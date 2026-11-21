@@ -14,6 +14,7 @@ import interviewRouter     from './modules/interview/interview.routes';
 import pickupRouter        from './modules/pickup/pickup.router';
 import opportunitiesRouter from './modules/opportunities/opportunities.router';
 import { organizationFinanceRouter } from './modules/organization-finance/organization-finance.router';
+import attendanceRouter from './modules/attendance/attendance.router';
 import { errorHandler }    from './middleware/error.middleware';
 
 const app = express();
@@ -38,6 +39,7 @@ app.use('/interview',     interviewRouter);
 app.use('/pickup',        pickupRouter);
 app.use('/finance',       organizationFinanceRouter);
 app.use('/opportunities', opportunitiesRouter);
+app.use('/attendance', attendanceRouter);
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 

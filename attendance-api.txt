@@ -1,0 +1,446 @@
+GHAFRA BACKEND - ATTENDANCE API
+===============================
+
+Base path:  /attendance
+Format:     JSON request and response bodies (Content-Type: application/json)
+Auth:       Every endpoint needs a signed-in user:
+              Authorization: Bearer <supabase access token>
+            Endpoints marked [ADMIN] also need profile role = "admin".
+            Moderators get 403 on admin endpoints.
+
+
+CONVENTIONS
+-----------
+
+Dates
+  Date only:   "YYYY-MM-DD"                   e.g. "2026-11-28"
+  Date + time: ISO 8601 with a time zone      e.g. "2026-11-28T18:00:00+01:00"
+                                                   or "2026-11-28T17:00:00Z"
+  All "today" and "meeting day" logic uses Paris time (Europe/Paris).
+
+IDs
+  All ids are UUIDs. A malformed id in the URL returns 422.
+
+Success response
+  { "success": true, "data": <result> }
+
+Paginated success response (GET /attendance/meetings only)
+  {
+    "success": true,
+    "data": [ ... ],
+    "meta": { "total": 42, "page": 1, "limit": 10, "pages": 5 }
+  }
+
+Error response
+  {
+    "success": false,
+    "error": { "message": "Meeting not found", "code": "NOT_FOUND" }
+  }
+
+Validation error (422) lists every bad field
+  {
+    "success": false,
+    "error": {
+      "message": "Validation failed",
+      "code": "VALIDATION_ERROR",
+      "issues": [ { "field": "latitude", "message": "Too small: expected number to be >=-90" } ]
+    }
+  }
+
+Status codes
+  200 OK            201 Created
+  400 BAD_REQUEST   rule broken (check-in closed, wrong code, too far, ...)
+  401 UNAUTHORIZED  missing or invalid token
+  403 FORBIDDEN     not an admin
+  404 NOT_FOUND     meeting / member / record does not exist
+  409 CONFLICT      already checked in / already marked
+  422 VALIDATION_ERROR  body or query has missing or invalid fields
+
+
+MEETING STATUS
+--------------
+Every meeting returned by the API carries a computed "status":
+
+  "cancelled"  an admin cancelled it
+  "completed"  not cancelled, and the date has passed or ends_at has passed
+  "upcoming"   everything else (today or later, not ended)
+
+Attendance status for a member is "Attended" or "Unavailable".
+"Unavailable" only appears once a meeting is completed, so nobody shows as
+Unavailable while check-in is still open. Cancelled meetings never count.
+
+
+THE MEETING OBJECT
+------------------
+Returned by the meeting endpoints. check_in_code is NOT included, except in
+the response to POST /attendance/meetings (see below).
+
+  {
+    "id": "8f1c...",
+    "title": "General meeting",
+    "description": "End of year planning",      // or null
+    "location_name": "Maison des associations, Lille",   // or null
+    "meeting_date": "2026-11-28",
+    "starts_at": "2026-11-28T17:00:00+00:00",   // or null
+    "ends_at": "2026-11-28T19:00:00+00:00",     // or null
+    "latitude": 50.6292,
+    "longitude": 3.0573,
+    "radius_m": 100,
+    "is_active": false,
+    "cancelled_at": null,
+    "created_at": "2026-11-21T10:00:00+00:00",
+    "updated_at": "2026-11-21T10:00:00+00:00",
+    "status": "upcoming"
+  }
+
+
+=====================================================================
+MEMBER ENDPOINTS (any signed-in user)
+=====================================================================
+
+POST /attendance/check-in
+-------------------------
+Checks the signed-in member in to a meeting.
+
+Body (all required)
+  meeting_id      uuid
+  check_in_code   string   the code announced in the room; case-insensitive
+  latitude        number   -90 to 90
+  longitude       number   -180 to 180
+  accuracy        number   GPS accuracy reported by the phone, in metres (> 0)
+
+  {
+    "meeting_id": "8f1c...",
+    "check_in_code": "K7QX3M",
+    "latitude": 50.62925,
+    "longitude": 3.05731,
+    "accuracy": 12
+  }
+
+Accepted only when, in this order:
+  1. the meeting exists                                   else 404
+  2. it is not cancelled                                  else 400
+  3. it is active (is_active = true)                      else 400
+  4. today (Paris) is meeting_date                        else 400
+  5. now is after starts_at and before ends_at, if set    else 400
+     (no times set = open all day while active)
+  6. the code matches                                     else 400 "Invalid check-in code"
+  7. accuracy is 100 m or better                          else 400
+  8. the member is within radius_m of the meeting point   else 400 (message gives the distance)
+  9. the member has not already checked in                else 409
+
+Response 201
+  {
+    "success": true,
+    "data": {
+      "id": "c2d9...",
+      "meeting_id": "8f1c...",
+      "status": "attended",
+      "recorded_at": "2026-11-28T17:42:10+00:00",
+      "distance_m": 18.4
+    }
+  }
+
+
+GET /attendance/me?year=
+------------------------
+The signed-in member's attendance history for one year, from the date they
+joined.
+
+Query
+  year   optional, 2020-2100, default = current year
+
+Response 200
+  {
+    "success": true,
+    "data": {
+      "year": 2026,
+      "joined_on": "2026-03-14",
+      "totals": { "attended": 7, "unavailable": 2 },
+      "months": [
+        {
+          "month": "2026-10",
+          "meetings": [
+            {
+              "meeting_id": "8f1c...",
+              "title": "General meeting",
+              "location_name": "Maison des associations, Lille",
+              "meeting_date": "2026-10-24",
+              "starts_at": "2026-10-24T16:00:00+00:00",
+              "status": "Attended",                    // or "Unavailable"
+              "recorded_at": "2026-10-24T16:12:00+00:00"   // null when Unavailable
+            }
+          ]
+        }
+      ]
+    }
+  }
+Months and meetings are most recent first.
+
+
+GET /attendance/meetings?status=&page=&limit=
+---------------------------------------------
+Paginated list of meetings.
+
+Query
+  status   optional: upcoming | cancelled | completed   (omit for all)
+  page     optional, >= 1, default 1
+  limit    optional, 1-50, default 10
+
+Order: upcoming = soonest first; everything else = most recent first.
+
+Response 200 (paginated format)
+  { "success": true, "data": [ <meeting>, ... ], "meta": { ... } }
+
+
+GET /attendance/meetings/:id
+----------------------------
+One meeting.
+
+Response 200
+  { "success": true, "data": <meeting> }
+
+
+=====================================================================
+ADMIN ENDPOINTS (role = admin)
+=====================================================================
+
+POST /attendance/meetings                                    [ADMIN]
+-----------------------------------------------------------
+Creates a meeting. The server generates check_in_code.
+
+Body
+  title           string    REQUIRED, 3-200 characters
+  meeting_date    string    REQUIRED, "YYYY-MM-DD"
+  latitude        number    REQUIRED, -90 to 90
+  longitude       number    REQUIRED, -180 to 180
+  radius_m        integer   optional, 25-2000, default 100
+  is_active       boolean   optional, default false
+  description     string    optional, max 2000 characters, or null
+  location_name   string    optional, max 200 characters, or null
+  starts_at       datetime  optional, or null
+  ends_at         datetime  optional, or null
+
+Rules
+  - starts_at and ends_at must fall on meeting_date in Paris time
+  - ends_at must be after starts_at when both are set
+
+  {
+    "title": "General meeting",
+    "description": "End of year planning",
+    "location_name": "Maison des associations, Lille",
+    "meeting_date": "2026-11-28",
+    "starts_at": "2026-11-28T18:00:00+01:00",
+    "ends_at": "2026-11-28T20:00:00+01:00",
+    "latitude": 50.6292,
+    "longitude": 3.0573,
+    "radius_m": 150
+  }
+
+Response 201
+  <meeting> plus "check_in_code": "K7QX3M"
+
+  This is the ONLY response that contains the code. Show it to the admin so
+  they can announce it in the room.
+
+
+PATCH /attendance/meetings/:id                               [ADMIN]
+------------------------------------------------------------
+Edits a meeting. Send only the fields you want to change.
+
+Body (all optional)
+  title, description, location_name, meeting_date, starts_at, ends_at,
+  latitude, longitude, radius_m       same rules as create
+  description, location_name, starts_at, ends_at   can be set to null to clear
+  cancelled       boolean   true = cancel the meeting (also deactivates it)
+                            false = restore a cancelled meeting
+
+  is_active is NOT accepted here; use PATCH /meetings/:id/active.
+
+  { "cancelled": true }
+  { "title": "General meeting (moved)", "meeting_date": "2026-11-29",
+    "starts_at": null, "ends_at": null }
+
+Response 200
+  { "success": true, "data": <meeting> }
+
+
+PATCH /attendance/meetings/:id/active                        [ADMIN]
+-------------------------------------------------------------
+Opens or closes check-in.
+
+Body
+  is_active   boolean   REQUIRED
+
+  { "is_active": true }
+
+Only "upcoming" meetings can be activated; activating a cancelled or
+completed meeting returns 400. Deactivating always works.
+
+Response 200
+  { "success": true, "data": <meeting> }
+
+
+DELETE /attendance/meetings/:id                              [ADMIN]
+-------------------------------------------------------------
+Deletes the meeting and all its attendance records. Cannot be undone.
+To keep the history, cancel instead (PATCH with { "cancelled": true }).
+
+Response 200
+  { "success": true, "data": { "deleted": true, "id": "8f1c..." } }
+
+
+GET /attendance/meetings/:id/roster?status=                  [ADMIN]
+-------------------------------------------------------------
+Who attended one meeting and who did not.
+
+Query
+  status   optional: attended | unavailable   (omit for both)
+
+Response 200
+  {
+    "success": true,
+    "data": {
+      "meeting": <meeting>,
+      "totals": { "expected": 90, "attended": 61, "unavailable": 29 },
+      "members": [
+        {
+          "record_id": "c2d9...",          // null when Unavailable
+          "user_id": "a41b...",
+          "member": { "id": "a41b...", "name": "Ama Mensah",
+                      "email": "ama@example.com", "photo_url": null },
+          "status": "Attended",            // or "Unavailable"
+          "recorded_at": "2026-11-28T17:42:10+00:00",   // null when Unavailable
+          "validation_status": "geofence_verified",     // or "admin_override"; null when Unavailable
+          "distance_m": 18.4               // null for admin marks and Unavailable
+        }
+      ]
+    }
+  }
+
+Notes
+  - expected = complete member profiles that joined on or before the meeting date
+  - attended includes anyone with a record, even if not in "expected"
+    (e.g. an admin marked a moderator), so attended + unavailable may not
+    equal expected
+  - unavailable is 0 until the meeting is completed
+  - use record_id with DELETE /attendance/records/:recordId
+
+
+POST /attendance/meetings/:id/records                        [ADMIN]
+-------------------------------------------------------------
+Marks a member as attended by hand (no code or location needed).
+
+Body
+  user_id   uuid   REQUIRED, the member's profile id
+
+  { "user_id": "a41b..." }
+
+Errors
+  400  meeting is cancelled, or its date is in the future
+  404  meeting or member not found
+  409  member is already marked for this meeting
+
+Response 201
+  {
+    "success": true,
+    "data": {
+      "id": "c2d9...", "meeting_id": "8f1c...", "user_id": "a41b...",
+      "status": "attended", "recorded_at": "...",
+      "validation_status": "admin_override", "distance_m": null,
+      "member": { "id": "a41b...", "name": "...", "email": "...", "photo_url": null }
+    }
+  }
+
+
+DELETE /attendance/records/:recordId                         [ADMIN]
+-------------------------------------------------------------
+Removes one attendance record (the member becomes Unavailable for that
+meeting once it is completed).
+
+Response 200
+  { "success": true, "data": { "deleted": true, "id": "c2d9..." } }
+
+
+GET /attendance/records?year=&month=&status=&user_id=        [ADMIN]
+-------------------------------------------------------------
+Attendance rows across meetings. Cancelled meetings are left out.
+
+Query (all optional)
+  year      2020-2100, default = current year
+  month     1-12; omit for the whole year
+  status    attended | unavailable
+  user_id   uuid, one member only
+
+Response 200
+  {
+    "success": true,
+    "data": {
+      "year": 2026,
+      "month": 11,                      // null when not filtered by month
+      "total": 120,
+      "records": [
+        {
+          "meeting": { "id": "8f1c...", "title": "General meeting",
+                       "location_name": "...", "meeting_date": "2026-11-28",
+                       "starts_at": "..." },
+          "record_id": "c2d9...",
+          "user_id": "a41b...",
+          "member": { "id": "...", "name": "...", "email": "...", "photo_url": null },
+          "status": "Attended",
+          "recorded_at": "...",
+          "validation_status": "geofence_verified",
+          "distance_m": 18.4
+        }
+      ]
+    }
+  }
+Meetings are most recent first. Rows are not paginated.
+
+
+GET /attendance/summary?year=&month=                         [ADMIN]
+-------------------------------------------------------------
+Counts per meeting for one month. Cancelled meetings are left out.
+
+Query (all optional)
+  year    2020-2100, default = current year
+  month   1-12, default = current month
+
+Response 200
+  {
+    "success": true,
+    "data": {
+      "year": 2026,
+      "month": 11,
+      "totals": { "meetings": 3, "attended": 170, "unavailable": 84 },
+      "meetings": [
+        {
+          "meeting_id": "8f1c...",
+          "title": "General meeting",
+          "meeting_date": "2026-11-28",
+          "starts_at": "...",
+          "status": "completed",
+          "expected": 90,
+          "attended": 61,
+          "unavailable": 29
+        }
+      ]
+    }
+  }
+
+
+GET /attendance/members/:userId?year=                        [ADMIN]
+-------------------------------------------------------------
+One member's history. Same query and same response as GET /attendance/me.
+404 if the member does not exist.
+
+
+TYPICAL FLOW
+------------
+Admin:   POST /meetings              -> note check_in_code
+         PATCH /meetings/:id/active  { "is_active": true }   on the day
+         announce the code in the room
+Member:  POST /check-in              with code + phone location
+Admin:   GET /meetings/:id/roster    to follow who has checked in
+         POST /meetings/:id/records  for anyone whose phone can't check in
+         PATCH /meetings/:id/active  { "is_active": false }  when done

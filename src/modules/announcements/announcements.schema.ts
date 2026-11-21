@@ -23,7 +23,7 @@ export const PaginationSchema = z.object({
 });
 
 export const AnnouncementIdSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
 });
 
 export type CreateAnnouncementInput = z.infer<typeof CreateAnnouncementSchema>;
