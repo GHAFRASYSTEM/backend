@@ -1,7 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { transactionsService } from './transactions.service';
 import { ok }                  from '../../shared/response';
-import { Errors }              from '../../shared/errors';
 
 export const transactionsController = {
 
@@ -38,8 +37,6 @@ export const transactionsController = {
   // Admin-only: GET /transactions/all
   async getAllPayments(req: Request, res: Response, next: NextFunction) {
     try {
-      if (req.user!.role !== 'admin') throw Errors.forbidden();
-
       const { type, month, year } = req.query;
 
       const payments = await transactionsService.getAllPayments({

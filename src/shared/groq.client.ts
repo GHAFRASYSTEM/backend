@@ -184,7 +184,7 @@ export interface GroqTranscriptionResponse {
   language?: string;
 }
 
-const DEFAULT_MODEL = 'llama-3.3-70b-versatile';
+const DEFAULT_MODEL = 'openai/gpt-oss-120b';
 
 // ─────────────────────────────────────────────────────────────
 // Core fetch wrapper — retries across all available keys

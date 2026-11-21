@@ -1,0 +1,201 @@
+@baseUrl = http://localhost:3000
+@token = replace-with-admin-access-token
+@nonAdminToken = replace-with-non-admin-access-token
+@recordId = replace-with-record-uuid
+
+### Create a record (JSON)
+POST {{baseUrl}}/organization-finance/records
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "amount": "1500.00",
+  "category": "expense",
+  "purpose": "Purchase of printer paper and toner",
+  "counterparty": "Office Supplies Ltd",
+  "transaction_date": "2026-10-15"
+}
+
+### Create a record with a receipt (replace the local file path)
+POST {{baseUrl}}/organization-finance/records
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=organizationFinanceBoundary
+
+--organizationFinanceBoundary
+Content-Disposition: form-data; name="amount"
+
+1500.00
+--organizationFinanceBoundary
+Content-Disposition: form-data; name="category"
+
+expense
+--organizationFinanceBoundary
+Content-Disposition: form-data; name="purpose"
+
+Purchase of printer paper and toner
+--organizationFinanceBoundary
+Content-Disposition: form-data; name="counterparty"
+
+Office Supplies Ltd
+--organizationFinanceBoundary
+Content-Disposition: form-data; name="transaction_date"
+
+2026-10-15
+--organizationFinanceBoundary
+Content-Disposition: form-data; name="document"; filename="receipt.pdf"
+Content-Type: application/pdf
+
+< ./fixtures/receipt.pdf
+--organizationFinanceBoundary--
+
+### List records (default)
+GET {{baseUrl}}/organization-finance/records
+Authorization: Bearer {{token}}
+
+### List by category
+GET {{baseUrl}}/organization-finance/records?category=income
+Authorization: Bearer {{token}}
+
+### List by month
+GET {{baseUrl}}/organization-finance/records?month=2026-10
+Authorization: Bearer {{token}}
+
+### List from date
+GET {{baseUrl}}/organization-finance/records?date_from=2026-10-01
+Authorization: Bearer {{token}}
+
+### List through date
+GET {{baseUrl}}/organization-finance/records?date_to=2026-10-31
+Authorization: Bearer {{token}}
+
+### List by search
+GET {{baseUrl}}/organization-finance/records?search=printer
+Authorization: Bearer {{token}}
+
+### List by minimum amount
+GET {{baseUrl}}/organization-finance/records?min_amount=100
+Authorization: Bearer {{token}}
+
+### List by maximum amount
+GET {{baseUrl}}/organization-finance/records?max_amount=5000
+Authorization: Bearer {{token}}
+
+### List with a receipt
+GET {{baseUrl}}/organization-finance/records?has_document=true
+Authorization: Bearer {{token}}
+
+### List without a receipt
+GET {{baseUrl}}/organization-finance/records?has_document=false
+Authorization: Bearer {{token}}
+
+### List with sort and pagination
+GET {{baseUrl}}/organization-finance/records?sort_by=amount&sort_order=desc&page=1&limit=20
+Authorization: Bearer {{token}}
+
+### Get a record
+GET {{baseUrl}}/organization-finance/records/{{recordId}}
+Authorization: Bearer {{token}}
+
+### Update record fields (JSON)
+PATCH {{baseUrl}}/organization-finance/records/{{recordId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "amount": "1250.00",
+  "purpose": "Updated purchase purpose"
+}
+
+### Replace receipt (replace the local file path)
+PATCH {{baseUrl}}/organization-finance/records/{{recordId}}
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=organizationFinanceUpdateBoundary
+
+--organizationFinanceUpdateBoundary
+Content-Disposition: form-data; name="document"; filename="replacement.pdf"
+Content-Type: application/pdf
+
+< ./fixtures/receipt.pdf
+--organizationFinanceUpdateBoundary--
+
+### Remove receipt
+PATCH {{baseUrl}}/organization-finance/records/{{recordId}}
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=organizationFinanceRemoveBoundary
+
+--organizationFinanceRemoveBoundary
+Content-Disposition: form-data; name="remove_document"
+
+true
+--organizationFinanceRemoveBoundary--
+
+### Delete a record
+DELETE {{baseUrl}}/organization-finance/records/{{recordId}}
+Authorization: Bearer {{token}}
+
+### Summary
+GET {{baseUrl}}/organization-finance/summary?month=2026-10&months=6
+Authorization: Bearer {{token}}
+
+### Error 401 (no authorization header)
+GET {{baseUrl}}/organization-finance/records
+
+### Error 403 (valid non-admin token)
+GET {{baseUrl}}/organization-finance/records
+Authorization: Bearer {{nonAdminToken}}
+
+### Error 422 (invalid amount)
+POST {{baseUrl}}/organization-finance/records
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "amount": "10.999",
+  "category": "expense",
+  "purpose": "Invalid amount test",
+  "counterparty": "Test"
+}
+
+### Error 422 (document and remove_document together)
+PATCH {{baseUrl}}/organization-finance/records/{{recordId}}
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=organizationFinanceConflictBoundary
+
+--organizationFinanceConflictBoundary
+Content-Disposition: form-data; name="remove_document"
+
+true
+--organizationFinanceConflictBoundary
+Content-Disposition: form-data; name="document"; filename="receipt.pdf"
+Content-Type: application/pdf
+
+< ./fixtures/receipt.pdf
+--organizationFinanceConflictBoundary--
+
+### Error 404 (missing record)
+GET {{baseUrl}}/organization-finance/records/00000000-0000-4000-8000-000000000000
+Authorization: Bearer {{token}}
+
+### Error 415 (unsupported extension; replace with a local .txt file)
+POST {{baseUrl}}/organization-finance/records
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=organizationFinanceUnsupportedBoundary
+
+--organizationFinanceUnsupportedBoundary
+Content-Disposition: form-data; name="document"; filename="unsupported.txt"
+Content-Type: text/plain
+
+< ./fixtures/unsupported.txt
+--organizationFinanceUnsupportedBoundary--
+
+### Error 413 (replace with a local file larger than 5 MiB)
+POST {{baseUrl}}/organization-finance/records
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=organizationFinanceOversizedBoundary
+
+--organizationFinanceOversizedBoundary
+Content-Disposition: form-data; name="document"; filename="oversized.pdf"
+Content-Type: application/pdf
+
+< ./fixtures/oversized.pdf
+--organizationFinanceOversizedBoundary--

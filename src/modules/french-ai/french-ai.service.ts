@@ -82,7 +82,7 @@ async function callGroqForJSON<T>(
   opts?: { temperature?: number; max_tokens?: number },
 ): Promise<T> {
   const data = await groq.chat({
-    model: 'llama-3.3-70b-versatile',
+    model: 'openai/gpt-oss-120b',
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userContent },
@@ -119,7 +119,7 @@ export async function chatWithTutor(payload: ChatRequest): Promise<{
   );
 
   const data = await groq.chat({
-    model: 'llama-3.3-70b-versatile',
+    model: 'openai/gpt-oss-120b',
     messages: [
       { role: 'system', content: systemPrompt },
       ...payload.messages,
