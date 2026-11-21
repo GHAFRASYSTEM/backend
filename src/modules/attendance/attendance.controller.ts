@@ -8,6 +8,8 @@ import {
   SetMeetingActiveSchema,
   ListMeetingsQuerySchema,
   MeetingIdSchema,
+  RecordIdSchema,
+  UserIdSchema,
   RosterQuerySchema,
   ManualMarkSchema,
   ListRecordsQuerySchema,
@@ -66,7 +68,7 @@ export const attendanceController = {
   async updateMeeting(req: Request, res: Response, next: NextFunction) {
     try {
       const input = UpdateMeetingSchema.parse(req.body);
-      const result = await attendanceService.updateMeeting(req.params.id as string, input);
+      const result = await attendanceService.updateMeeting(MeetingIdSchema.parse(req.params).id, input);
       return ok(res, result);
     } catch (err) { next(err); }
   },
@@ -75,7 +77,7 @@ export const attendanceController = {
   async setMeetingActive(req: Request, res: Response, next: NextFunction) {
     try {
       const input = SetMeetingActiveSchema.parse(req.body);
-      const result = await attendanceService.setMeetingActive(req.params.id as string, input);
+      const result = await attendanceService.setMeetingActive(MeetingIdSchema.parse(req.params).id, input);
       return ok(res, result);
     } catch (err) { next(err); }
   },
@@ -83,7 +85,7 @@ export const attendanceController = {
   // DELETE /attendance/meetings/:id
   async deleteMeeting(req: Request, res: Response, next: NextFunction) {
     try {
-      const result = await attendanceService.deleteMeeting(req.params.id as string);
+      const result = await attendanceService.deleteMeeting(MeetingIdSchema.parse(req.params).id);
       return ok(res, result);
     } catch (err) { next(err); }
   },
@@ -92,7 +94,7 @@ export const attendanceController = {
   async getMeetingRoster(req: Request, res: Response, next: NextFunction) {
     try {
       const query = RosterQuerySchema.parse(req.query);
-      const result = await attendanceService.getMeetingRoster(req.params.id as string, query);
+      const result = await attendanceService.getMeetingRoster(MeetingIdSchema.parse(req.params).id, query);
       return ok(res, result);
     } catch (err) { next(err); }
   },
@@ -101,7 +103,7 @@ export const attendanceController = {
   async markAttendanceManually(req: Request, res: Response, next: NextFunction) {
     try {
       const input = ManualMarkSchema.parse(req.body);
-      const result = await attendanceService.markAttendanceManually(req.params.id as string, input);
+      const result = await attendanceService.markAttendanceManually(MeetingIdSchema.parse(req.params).id, input);
       return created(res, result);
     } catch (err) { next(err); }
   },
@@ -109,7 +111,7 @@ export const attendanceController = {
   // DELETE /attendance/records/:recordId
   async deleteRecord(req: Request, res: Response, next: NextFunction) {
     try {
-      const result = await attendanceService.deleteRecord(req.params.recordId as string);
+      const result = await attendanceService.deleteRecord(RecordIdSchema.parse(req.params).recordId);
       return ok(res, result);
     } catch (err) { next(err); }
   },
@@ -136,7 +138,7 @@ export const attendanceController = {
   async getMemberHistory(req: Request, res: Response, next: NextFunction) {
     try {
       const query = HistoryQuerySchema.parse(req.query);
-      const result = await attendanceService.getMemberHistory(req.params.userId as string, query);
+      const result = await attendanceService.getMemberHistory(UserIdSchema.parse(req.params).userId, query);
       return ok(res, result);
     } catch (err) { next(err); }
   },
