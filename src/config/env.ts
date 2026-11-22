@@ -32,6 +32,16 @@ const schema = z.object({
 
   //Card authenticatio,
    CARD_SECRET:           z.string().min(1),
+
+  // ── Push (optional) — raises Expo push rate limits when set ──────────────
+  EXPO_ACCESS_TOKEN:     z.string().optional(),
+
+  // ── Scheduling ───────────────────────────────────────────────────────────
+  APP_TIMEZONE:          z.string().default('Europe/Paris'),
+  // Set to "false" on extra instances so only one runs the cron jobs
+  RUN_JOBS:              z.string().default('true'),
+  // Shown as the sender name in emails
+  APP_NAME:              z.string().default('GHAFRA'),
 });
 
 const parsed = schema.safeParse(process.env);

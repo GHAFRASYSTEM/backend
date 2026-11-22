@@ -190,7 +190,12 @@ describe('transition', () => {
     });
     expect(db.calls(write, 'eq')).toContainEqual(['status', 'draft']);
     expect(broadcast).toHaveBeenCalledTimes(1);
-    expect(broadcast.mock.calls[0][1]).toEqual({ type: 'opportunity', opportunity_id: OPPORTUNITY_ID });
+    expect(broadcast.mock.calls[0][1]).toEqual({
+      type: 'opportunity',
+      opportunity_id: OPPORTUNITY_ID,
+      route: `/(standalone)/JobInternship/Jobdetailscreen?id=${OPPORTUNITY_ID}`,
+    });
+    expect(broadcast.mock.calls[0][2]).toBe('opportunities');
     expect(result.availability).toBe('open');
   });
 

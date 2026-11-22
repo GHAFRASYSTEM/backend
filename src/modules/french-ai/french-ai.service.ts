@@ -27,6 +27,7 @@ import { AppError } from '../../shared/errors';
 import { groq } from '../../shared/groq.client';
 import type {
   ChatRequest,
+  CefrLevel,
   TTSRequest,
   TutorConfig,
   RoleplayScene,
@@ -64,12 +65,11 @@ import {
   buildVocabQuizPrompt,
   pickRandomTopic,
 } from './french-ai.prompts';
+import { env } from '../../config/env';
+import { supabase } from '../../config/supabase';
 
 // ── Env ───────────────────────────────────────────────────────────────────────
-const HF_API_TOKEN = process.env.HF_API_TOKEN ?? '';
 
-const KOKORO_MODEL  = 'hexgrad/Kokoro-82M';
-const KOKORO_HF_URL = `https://api-inference.huggingface.co/models/${KOKORO_MODEL}`;
 
 // ── Shared Groq JSON helper ───────────────────────────────────────────────────
 // Sections 4-9 all want structured (array/object) output rather than the
@@ -122,7 +122,8 @@ export async function chatWithTutor(payload: ChatRequest): Promise<{
     model: 'openai/gpt-oss-120b',
     messages: [
       { role: 'system', content: systemPrompt },
-      ...payload.messages,
+      // Last 20 turns are plenty of context and keep latency down
+      ...payload.messages.slice(-20),
     ],
     temperature: 0.85,
     max_tokens: 600,
@@ -136,7 +137,7 @@ export async function chatWithTutor(payload: ChatRequest): Promise<{
   };
 
   const reply         = extract('FRENCH');
-  const translation   = extract('ENGLISH');
+  const translation   = stripAudioTags(extract('ENGLISH'));
   const rawCorrection = extract('CORRECTION');
   const tip           = extract('TIP') || null;
   const correction    = rawCorrection && rawCorrection.toLowerCase() !== 'none'
@@ -163,8 +164,9 @@ export async function transcribeAudio(
     const form = new FormData(); // native global FormData (no 'form-data' import in this file)
     const bytes = new Uint8Array(audioBuffer); // sidesteps Buffer/ArrayBufferLike typing mismatch
     const blob = new Blob([bytes], { type: mimeType });
-    form.append('file', blob, 'audio.m4a');
-    form.append('model', 'whisper-large-v3');
+    const ext = /wav/.test(mimeType) ? 'wav' : /mpeg|mp3/.test(mimeType) ? 'mp3' : /webm/.test(mimeType) ? 'webm' : /ogg/.test(mimeType) ? 'ogg' : 'm4a';
+    form.append('file', blob, `audio.${ext}`);
+    form.append('model', 'whisper-large-v3-turbo');   // faster, free on Groq
     form.append('language', language);
     form.append('response_format', 'json');
     return form;
@@ -211,48 +213,104 @@ export async function scorePronunciation(
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// 3. TEXT-TO-SPEECH
+// 3. TEXT-TO-SPEECH — free Google voice (Groq has no French TTS model).
+// Long replies are chunked so nothing is cut off. Returns MP3.
 // ══════════════════════════════════════════════════════════════════════════
-export async function synthesizeSpeech(payload: TTSRequest): Promise<Buffer> {
-  const kokoro = await tryKokoro(payload.text);
-  if (kokoro.length) return kokoro;
-  return tryGoogleTTS(payload.text);
+
+const AUDIO_TAG_RE = /\[(?:laughs?|chuckles?|sighs?|gasps?|whispers?|excited|curious|clears throat|pause)[^\]]*\]\s*/gi;
+
+/** Removes bracketed stage directions so they're never read aloud. */
+export function stripAudioTags(text: string): string {
+  return text.replace(AUDIO_TAG_RE, '').replace(/\s{2,}/g, ' ').trim();
 }
 
-async function tryKokoro(text: string): Promise<Buffer> {
-  if (!HF_API_TOKEN) return Buffer.alloc(0);
-
-  try {
-    const res = await fetch(KOKORO_HF_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${HF_API_TOKEN}`,
-      },
-      body: JSON.stringify({ inputs: text }),
-    });
-
-    if (!res.ok) {
-      console.warn('Kokoro unavailable, using fallback TTS');
-      return Buffer.alloc(0);
-    }
-
-    return Buffer.from(await res.arrayBuffer() as ArrayBuffer);
-  } catch {
-    return Buffer.alloc(0);
+/** Splits text into ≤180-char pieces on sentence/comma boundaries. */
+function chunkForBasicTTS(text: string, max = 180): string[] {
+  const out: string[] = [];
+  let current = '';
+  for (const piece of text.split(/(?<=[.!?…,;:])\s+/)) {
+    if ((current + ' ' + piece).trim().length > max && current) { out.push(current.trim()); current = ''; }
+    if (piece.length > max) {
+      for (let i = 0; i < piece.length; i += max) out.push(piece.slice(i, i + max));
+    } else current += ' ' + piece;
   }
+  if (current.trim()) out.push(current.trim());
+  return out;
 }
 
-async function tryGoogleTTS(text: string): Promise<Buffer> {
-  const encoded = encodeURIComponent(text.slice(0, 200));
-  const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encoded}&tl=fr&client=gtx`;
+async function basicTTS(text: string): Promise<Buffer> {
+  const parts = chunkForBasicTTS(stripAudioTags(text));
+  const buffers: Buffer[] = [];
+  for (const part of parts) {
+    const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(part)}&tl=fr&client=gtx`;
+    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (!res.ok) throw new AppError('TTS unavailable', 502);
+    buffers.push(Buffer.from(await res.arrayBuffer()));
+  }
+  // MP3 frames concatenate cleanly
+  return Buffer.concat(buffers);
+}
 
-  const res = await fetch(url, {
-    headers: { 'User-Agent': 'Mozilla/5.0' },
+export async function synthesizeSpeech(payload: TTSRequest): Promise<Buffer> {
+  const text = payload.text.trim();
+  if (!text) return Buffer.alloc(0);
+  return basicTTS(text);
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// 3c. PRACTICE TRACKING — streaks + daily reminder input
+// ══════════════════════════════════════════════════════════════════════════
+function zonedDate(at = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: env.APP_TIMEZONE }).format(at);
+}
+
+export async function logPractice(userId: string, activity: string) {
+  const { error } = await supabase.rpc('log_french_practice', {
+    p_user: userId, p_day: zonedDate(), p_activity: activity.slice(0, 60),
+  });
+  if (error) console.warn('[practice] log failed:', error.message);
+}
+
+export async function getProgress(userId: string) {
+  const today = zonedDate();
+  const since = zonedDate(new Date(Date.now() - 400 * 86_400_000));
+  const { data, error } = await supabase
+    .from('french_practice_log')
+    .select('practiced_on, activities')
+    .eq('user_id', userId)
+    .gte('practiced_on', since)
+    .order('practiced_on', { ascending: false });
+  if (error) throw new AppError(error.message, 500);
+
+  const days = new Map((data ?? []).map(r => [r.practiced_on as string, r.activities as number]));
+  const dayStr = (offset: number) => zonedDate(new Date(Date.now() - offset * 86_400_000));
+
+  // Streak counts back from today, or from yesterday if today isn't done yet
+  let streak = 0;
+  for (let i = days.has(today) ? 0 : 1; days.has(dayStr(i)); i++) streak++;
+
+  let best = 0, run = 0, prev: string | null = null;
+  for (const d of [...days.keys()].sort()) {
+    const consecutive = prev && Date.parse(d) - Date.parse(prev) === 86_400_000;
+    run = consecutive ? run + 1 : 1;
+    best = Math.max(best, run);
+    prev = d;
+  }
+
+  const last7 = Array.from({ length: 7 }, (_, i) => {
+    const d = dayStr(6 - i);
+    return { date: d, practiced: days.has(d), activities: days.get(d) ?? 0 };
   });
 
-  if (!res.ok) throw new AppError('TTS unavailable', 502);
-  return Buffer.from(await res.arrayBuffer());
+  return {
+    today,
+    practicedToday:  days.has(today),
+    activitiesToday: days.get(today) ?? 0,
+    streak,
+    bestStreak:      best,
+    totalDays:       days.size,
+    last7,
+  };
 }
 
 // ══════════════════════════════════════════════════════════════════════════

@@ -82,6 +82,20 @@ export const attendanceController = {
     } catch (err) { next(err); }
   },
 
+  // GET /attendance/meetings/:id/code
+  async getCheckInCode(req: Request, res: Response, next: NextFunction) {
+    try {
+      return ok(res, await attendanceService.getCheckInCode(MeetingIdSchema.parse(req.params).id));
+    } catch (err) { next(err); }
+  },
+
+  // POST /attendance/meetings/:id/code  (rotate)
+  async regenerateCheckInCode(req: Request, res: Response, next: NextFunction) {
+    try {
+      return ok(res, await attendanceService.regenerateCheckInCode(MeetingIdSchema.parse(req.params).id));
+    } catch (err) { next(err); }
+  },
+
   // DELETE /attendance/meetings/:id
   async deleteMeeting(req: Request, res: Response, next: NextFunction) {
     try {

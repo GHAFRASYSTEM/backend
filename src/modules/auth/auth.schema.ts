@@ -35,6 +35,10 @@ export const DeleteFcmTokenSchema = z.object({
 });
 export const AppleSignInSchema = z.object({
   identity_token: z.string().min(1),   // Apple's JWT
+  // Raw nonce whose SHA-256 was sent to Apple (replay protection)
+  nonce:          z.string().min(1).optional(),
+  // Apple only returns the name on the very first sign-in — keep it
+  full_name:      z.string().trim().max(100).optional(),
   device_token:   z.string().optional(),
   platform:       z.enum(['ios', 'android']).optional(),
 });

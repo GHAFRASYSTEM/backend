@@ -2,6 +2,7 @@ import 'dotenv/config';
 import app     from './app';
 import { env } from './config/env';
 import { initializePronunciationPhrases } from './modules/french-ai/french-ai.data';
+import { startJobs } from './jobs';
 
 process.on('uncaughtException', (err) => {
   console.error('💥 Uncaught exception:', err);
@@ -23,6 +24,7 @@ async function startServer() {
 
     app.listen(port, '0.0.0.0', () => {
       console.log(`🚀 GHAFRA API running on port ${port}`);
+      startJobs();
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error);

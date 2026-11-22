@@ -1,5 +1,6 @@
 import { supabase }  from '../../config/supabase';
 import { Errors }    from '../../shared/errors';
+import { notifyInBackground } from '../notifications/notifications.service';
 import type {
   CreateAnnouncementInput,
   UpdateAnnouncementInput,
@@ -66,6 +67,20 @@ async function deleteImage(announcementId: string): Promise<void> {
   await supabase.storage.from(BUCKET).remove(paths);
 }
 
+// Push every new post to members (in background — never slows the admin's request)
+function announceToMembers(a: { id: string; category: string; title: string; body: string }) {
+  const preview = a.body.replace(/\s+/g, ' ').trim();
+  notifyInBackground({
+    category: 'announcements',
+    title:    a.title,
+    body:     preview.length > 140 ? `${preview.slice(0, 137)}…` : preview,
+    audience: { type: 'all' },
+    data:     { route: `/(standalone)/announcement/${a.id}`, type: 'announcement', announcement_id: a.id },
+    source:   'automatic',
+    jobKey:   `announcement:${a.id}`,
+  });
+}
+
 // ── Service ───────────────────────────────────────────────────────────────────
 
 export const announcementsService = {
@@ -130,9 +145,11 @@ export const announcementsService = {
         .single();
 
       if (updateError) throw Errors.internal(updateError.message);
+      announceToMembers(updated);
       return updated;
     }
 
+    announceToMembers(inserted);
     return inserted;
   },
 

@@ -25,6 +25,7 @@ export const ChatRequestSchema = z.object({
 
 export type ChatRequest = z.infer<typeof ChatRequestSchema>;
 
+
 // ── Chat response (for documentation / typed returns) ─────────────────────────
 export interface ChatResponse {
   reply:       string;        // French reply

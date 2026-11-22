@@ -267,3 +267,15 @@ export async function generateVocabQuiz(req: Request, res: Response, next: NextF
     next(err);
   }
 }
+// ══════════════════════════════════════════════════════════════════════════
+// PROGRESS
+// ══════════════════════════════════════════════════════════════════════════
+
+/** GET /french-ai/progress → streak, practised today, last 7 days */
+export async function progress(req: Request, res: Response, next: NextFunction) {
+  try {
+    ok(res, await FrenchAIService.getProgress(req.user!.id));
+  } catch (err) {
+    next(err);
+  }
+}

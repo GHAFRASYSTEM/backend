@@ -208,11 +208,12 @@ export const authService = {
 
   // ── 8. Apple sign-in ──────────────────────────────────────────────────────
   async handleAppleSignIn(input: AppleSignInInput) {
-    const { identity_token, device_token, platform } = input;
+    const { identity_token, nonce, full_name, device_token, platform } = input;
 
     const { data: { user, session }, error } = await supabase.auth.signInWithIdToken({
       provider: 'apple',
       token:    identity_token,
+      ...(nonce ? { nonce } : {}),
     });
 
     if (error || !user || !session) throw Errors.unauthorized();
@@ -234,7 +235,7 @@ export const authService = {
         .insert({
           id:           user.id,
           email:        user.email ?? user.user_metadata?.email ?? '',
-          name:         user.user_metadata?.full_name ?? '',
+          name:         full_name || user.user_metadata?.full_name || '',
           photo_url:    null,
           role:         'member',
           is_complete:  false,
@@ -245,6 +246,16 @@ export const authService = {
 
       if (insertError) throw insertError;
       profile = newProfile;
+    } else if (full_name && !existingProfile.name) {
+      // First Apple sign-in after an earlier attempt that lost the name
+      const { data: named } = await supabase
+        .from('profiles').update({ name: full_name }).eq('id', user.id).select().single();
+      if (named) profile = named;
+    }
+
+    // Keep the name on the auth user too, so the app can prefill sign-up
+    if (full_name && !user.user_metadata?.full_name) {
+      await supabase.auth.admin.updateUserById(user.id, { user_metadata: { ...user.user_metadata, full_name } });
     }
 
     if (profile?.role === 'admin') throw Errors.forbidden();

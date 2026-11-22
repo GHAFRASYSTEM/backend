@@ -2,19 +2,39 @@ import { Router } from 'express';
 import multer from 'multer';
 import { requireAuth } from '../../middleware/auth.middleware';
 import * as FrenchAIController from './french-ai.controller';
+import { logPractice } from './french-ai.service';
 
 const router = Router();
 
 // Audio uploads stay in memory (no disk I/O) — max 10 MB
+const AUDIO_MIME = new Set(['audio/mpeg', 'audio/mp4', 'audio/m4a', 'audio/wav', 'audio/x-wav',
+  'audio/wave', 'audio/vnd.wave', 'audio/webm', 'audio/ogg', 'audio/x-m4a', 'audio/aac']);
+const AUDIO_EXT = /\.(m4a|mp4|mp3|wav|webm|ogg|aac|caf)$/i;
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
+  // Some Android builds send application/octet-stream — accept by extension too
   fileFilter: (_req, file, cb) => {
-    const allowed = ['audio/mpeg', 'audio/mp4', 'audio/m4a', 'audio/wav',
-                     'audio/webm', 'audio/ogg', 'audio/x-m4a'];
-    cb(null, allowed.includes(file.mimetype));
+    cb(null, AUDIO_MIME.has(file.mimetype) || AUDIO_EXT.test(file.originalname ?? ''));
   },
 });
+
+// Every successful POST to the tutor counts as practice for today (streaks +
+// the 19:00 reminder). Logged after the response, never slows the request.
+router.use((req, res, next) => {
+  if (req.method === 'POST') {
+    res.on('finish', () => {
+      if (res.statusCode < 400 && req.user) {
+        logPractice(req.user.id, req.path.replace(/^\//, '') || 'tutor').catch(() => {});
+      }
+    });
+  }
+  next();
+});
+
+/** GET /french-ai/progress — streak + last 7 days */
+router.get('/progress', requireAuth, FrenchAIController.progress);
 
 /**
  * POST /french-ai/chat

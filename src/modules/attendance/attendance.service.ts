@@ -1,6 +1,8 @@
 import { randomInt } from 'crypto';
 import { supabase } from '../../config/supabase';
 import { Errors } from '../../shared/errors';
+import { runAttendanceReminders } from '../../jobs/attendance-reminders.job';
+import { notifyInBackground } from '../notifications/notifications.service';
 import type {
   CheckInInput,
   HistoryQuery,
@@ -254,6 +256,24 @@ function attendanceRows(entry: MeetingAttendance) {
   return [...attended, ...unavailable];
 }
 
+// Writes a meeting patch; if migration 011 (activated_at) isn't applied yet,
+// retries without that column instead of failing the admin's action.
+async function updateMeetingRow(meetingId: string, patch: Record<string, unknown>) {
+  let res = await supabase.from(MEETINGS).update(patch).eq('id', meetingId).select(MEETING_COLUMNS).single();
+  if (res.error && 'activated_at' in patch && /activated_at/.test(res.error.message)) {
+    const { activated_at, ...rest } = patch;
+    res = await supabase.from(MEETINGS).update(rest).eq('id', meetingId).select(MEETING_COLUMNS).single();
+  }
+  if (res.error) throw Errors.internal(res.error.message);
+  return res.data;
+}
+
+// Push + email "meeting ongoing" right away instead of waiting for the next job tick
+function triggerReminders(meetingId: string) {
+  runAttendanceReminders(meetingId).catch(err =>
+    console.error('[attendance] reminder trigger failed:', err?.message ?? err));
+}
+
 function matchesStatus(rowStatus: HistoryStatus, filter?: 'attended' | 'unavailable') {
   return !filter || rowStatus.toLowerCase() === filter;
 }
@@ -428,14 +448,18 @@ export const attendanceService = {
   async createMeeting(input: CreateMeetingInput) {
     assertValidWindow(input);
 
-    const { data, error } = await supabase
-      .from(MEETINGS)
-      .insert({ ...input, check_in_code: generateCheckInCode() })
-      .select(`${MEETING_COLUMNS}, check_in_code`)
-      .single();
+    const row: Record<string, unknown> = { ...input, check_in_code: generateCheckInCode() };
+    if (input.is_active) row.activated_at = new Date().toISOString();
 
-    if (error) throw Errors.internal(error.message);
-    return withStatus(data);
+    let res = await supabase.from(MEETINGS).insert(row).select(`${MEETING_COLUMNS}, check_in_code`).single();
+    if (res.error && /activated_at/.test(res.error.message)) {
+      delete row.activated_at;
+      res = await supabase.from(MEETINGS).insert(row).select(`${MEETING_COLUMNS}, check_in_code`).single();
+    }
+    if (res.error) throw Errors.internal(res.error.message);
+
+    if (input.is_active) triggerReminders(res.data.id);
+    return withStatus(res.data);
   },
 
   // cancelled: true stamps cancelled_at and deactivates; false restores the meeting
@@ -455,14 +479,21 @@ export const attendanceService = {
       if (cancelled) patch.is_active = false;
     }
 
-    const { data, error } = await supabase
-      .from(MEETINGS)
-      .update(patch)
-      .eq('id', meetingId)
-      .select(MEETING_COLUMNS)
-      .single();
+    const data = await updateMeetingRow(meetingId, patch);
 
-    if (error) throw Errors.internal(error.message);
+    // Tell members when an upcoming meeting is called off
+    if (cancelled === true && !current.cancelled_at && current.status === 'upcoming') {
+      notifyInBackground({
+        category: 'meetings',
+        title:    'Meeting cancelled',
+        body:     `${current.title} on ${current.meeting_date} has been cancelled. We'll share the new date soon.`,
+        audience: { type: 'all' },
+        channels: ['push', 'email'],
+        data:     { route: '/(tabs)/(community)/attendance', type: 'meeting_cancelled', meeting_id: meetingId },
+        source:   'automatic',
+        jobKey:   `meeting:${meetingId}:cancelled`,
+      });
+    }
     return withStatus(data);
   },
 
@@ -473,15 +504,32 @@ export const attendanceService = {
       throw Errors.badRequest(`Cannot activate a ${current.status} meeting`);
     }
 
-    const { data, error } = await supabase
-      .from(MEETINGS)
-      .update({ is_active: input.is_active, updated_at: new Date().toISOString() })
-      .eq('id', meetingId)
-      .select(MEETING_COLUMNS)
-      .single();
+    const now = new Date().toISOString();
+    const patch: Record<string, unknown> = { is_active: input.is_active, updated_at: now };
+    if (input.is_active && !current.is_active) patch.activated_at = now;
 
-    if (error) throw Errors.internal(error.message);
+    const data = await updateMeetingRow(meetingId, patch);
+    if (input.is_active) triggerReminders(meetingId);
     return withStatus(data);
+  },
+
+  // Admin: read the code to announce in the room (it is never sent to members)
+  async getCheckInCode(meetingId: string) {
+    const { data, error } = await supabase
+      .from(MEETINGS).select('id, check_in_code').eq('id', meetingId).maybeSingle();
+    if (error) throw Errors.internal(error.message);
+    if (!data) throw Errors.notFound('Meeting');
+    return { meeting_id: data.id, check_in_code: data.check_in_code };
+  },
+
+  // Admin: issue a fresh code, e.g. if the old one leaked outside the room
+  async regenerateCheckInCode(meetingId: string) {
+    await attendanceService.getMeeting(meetingId);
+    const code = generateCheckInCode();
+    const { error } = await supabase
+      .from(MEETINGS).update({ check_in_code: code, updated_at: new Date().toISOString() }).eq('id', meetingId);
+    if (error) throw Errors.internal(error.message);
+    return { meeting_id: meetingId, check_in_code: code };
   },
 
   // Records go with it through the cascading foreign key

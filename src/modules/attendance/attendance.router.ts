@@ -16,6 +16,8 @@ router.post('/meetings', requireRole('admin'), attendanceController.createMeetin
 router.patch('/meetings/:id', requireRole('admin'), attendanceController.updateMeeting);
 router.patch('/meetings/:id/active', requireRole('admin'), attendanceController.setMeetingActive);
 router.delete('/meetings/:id', requireRole('admin'), attendanceController.deleteMeeting);
+router.get('/meetings/:id/code', requireRole('admin'), attendanceController.getCheckInCode);
+router.post('/meetings/:id/code', requireRole('admin'), attendanceController.regenerateCheckInCode);
 
 router.get('/meetings/:id/roster', requireRole('admin'), attendanceController.getMeetingRoster);
 router.post('/meetings/:id/records', requireRole('admin'), attendanceController.markAttendanceManually);

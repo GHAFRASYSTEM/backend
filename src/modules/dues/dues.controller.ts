@@ -28,7 +28,7 @@ export const duesController = {
   // POST /dues/create-payment-intent
   async createPaymentIntent(req: Request, res: Response, next: NextFunction) {
     try {
-      const { type, amount } = CreatePaymentIntentSchema.parse(req.body);
+      const { type, amount, months } = CreatePaymentIntentSchema.parse(req.body);
 
       // Convert euros → cents for donations
       const amountCents = amount ? Math.round(amount * 100) : undefined;
@@ -37,6 +37,7 @@ export const duesController = {
         req.user!.id,
         type,
         amountCents,
+        months,
       );
       return created(res, result);
     } catch (err) {

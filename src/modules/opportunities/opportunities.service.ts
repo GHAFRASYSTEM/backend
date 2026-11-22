@@ -124,10 +124,11 @@ function notifyMembersOfNewOpportunity(opportunity: {
   notificationService
     .broadcast(
       {
-        title: opportunity.type === 'internship' ? '🎓 New internship opportunity' : '💼 New job opportunity',
+        title: opportunity.type === 'internship' ? 'New internship opportunity' : 'New job opportunity',
         body:  `${opportunity.title} at ${opportunity.organization}`,
       },
-      { type: 'opportunity', opportunity_id: opportunity.id },
+      { type: 'opportunity', opportunity_id: opportunity.id, route: `/(standalone)/JobInternship/Jobdetailscreen?id=${opportunity.id}` },
+      'opportunities',
     )
     .catch(err => console.error('[opportunities] push broadcast failed:', err));
 }
