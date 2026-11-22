@@ -9,3 +9,10 @@ describe('GET /health', () => {
     expect(res.body).toEqual({ status: 'ok' });
   });
 });
+
+describe('/jobs/tick', () => {
+  it('rejects calls without the jobs secret', async () => {
+    expect((await request(app).post('/jobs/tick')).status).toBe(401);
+    expect((await request(app).get('/jobs/tick?key=wrong-secret-value')).status).toBe(401);
+  });
+});

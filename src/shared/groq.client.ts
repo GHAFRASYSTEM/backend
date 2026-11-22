@@ -173,6 +173,8 @@ export interface GroqChatParams {
   messages: GroqMessage[];
   temperature?: number;
   max_tokens?: number;
+  /** gpt-oss models "think" first; that hidden reasoning counts toward max_tokens */
+  reasoning_effort?: 'low' | 'medium' | 'high';
 }
 
 export interface GroqChatResponse {
@@ -253,6 +255,10 @@ async function chat(params: GroqChatParams): Promise<GroqChatResponse> {
         messages:    params.messages,
         temperature: params.temperature ?? 0.7,
         max_tokens:  params.max_tokens ?? 600,
+        // Keep reasoning short on gpt-oss so it doesn't eat the answer's budget
+        ...((params.model ?? DEFAULT_MODEL).includes('gpt-oss')
+          ? { reasoning_effort: params.reasoning_effort ?? 'low' }
+          : {}),
       }),
     }),
   );

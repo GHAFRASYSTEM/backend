@@ -81,24 +81,41 @@ async function callGroqForJSON<T>(
   userContent: string,
   opts?: { temperature?: number; max_tokens?: number },
 ): Promise<T> {
-  const data = await groq.chat({
-    model: 'openai/gpt-oss-120b',
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userContent },
-    ],
-    temperature: opts?.temperature ?? 0.7,
-    max_tokens: opts?.max_tokens ?? 900,
-  });
+  // Reasoning tokens share the completion budget, so never go below 4k —
+  // small budgets were truncating the JSON mid-object.
+  const maxTokens = Math.max(4000, opts?.max_tokens ?? 0);
 
-  const raw = groq.extractText(data);
-  const cleaned = raw.replace(/```json|```/g, '').trim();
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const data = await groq.chat({
+      model: 'openai/gpt-oss-120b',
+      messages: [
+        { role: 'system', content: `${systemPrompt}\n\nReturn ONLY valid JSON. No markdown fences, no commentary.` },
+        { role: 'user', content: userContent },
+      ],
+      temperature: opts?.temperature ?? 0.7,
+      max_tokens: maxTokens,
+      reasoning_effort: 'low',
+    });
 
-  try {
-    return JSON.parse(cleaned) as T;
-  } catch {
-    throw new AppError('Failed to parse AI response as JSON', 502);
+    const parsed = extractJson<T>(groq.extractText(data));
+    if (parsed !== undefined) return parsed;
+    console.warn(`[french-ai] unparseable JSON from model (attempt ${attempt})`);
   }
+  throw new AppError('The tutor had trouble preparing this exercise. Please try again.', 502);
+}
+
+/** Parses JSON even when the model wraps it in fences or adds text around it. */
+function extractJson<T>(raw: string): T | undefined {
+  if (!raw) return undefined;
+  const cleaned = raw.replace(/```(?:json)?/gi, '').trim();
+  try { return JSON.parse(cleaned) as T; } catch {}
+  // Take the outermost {...} or [...] block
+  const starts = [cleaned.indexOf('{'), cleaned.indexOf('[')].filter(i => i >= 0);
+  if (!starts.length) return undefined;
+  const start = Math.min(...starts);
+  const end = Math.max(cleaned.lastIndexOf('}'), cleaned.lastIndexOf(']'));
+  if (end <= start) return undefined;
+  try { return JSON.parse(cleaned.slice(start, end + 1)) as T; } catch { return undefined; }
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -126,7 +143,7 @@ export async function chatWithTutor(payload: ChatRequest): Promise<{
       ...payload.messages.slice(-20),
     ],
     temperature: 0.85,
-    max_tokens: 600,
+    max_tokens: 2000,
   });
 
   const rawContent = groq.extractText(data);

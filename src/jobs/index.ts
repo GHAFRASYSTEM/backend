@@ -31,10 +31,30 @@ export function startJobs() {
 
   cron.schedule('* * * * *',   guard('attendance-reminders', () => runAttendanceReminders()), opts);
   cron.schedule('*/5 * * * *', guard('meeting-countdown',    runMeetingCountdown),           opts);
-  cron.schedule('0 10 * * *',  guard('dues-reminder',        runDuesReminder),               opts);
-  cron.schedule('0 19 * * *',  guard('french-practice',      runFrenchPracticeReminder),     opts);
+  cron.schedule('*/15 * * * *', guard('dues-reminder',       runDuesReminder),               opts);
+  cron.schedule('*/15 * * * *', guard('french-practice',     runFrenchPracticeReminder),     opts);
 
   console.log(`⏰ Jobs scheduled (${env.APP_TIMEZONE}): attendance reminders, meeting countdown, dues, French practice`);
 }
 
 export { runAttendanceReminders };
+
+/**
+ * Runs every job check once. Called by POST /jobs/tick from an external
+ * scheduler, so reminders still go out when a free host has put the server
+ * to sleep (the request wakes it). Every job is time-gated and idempotent,
+ * so calling this every few minutes is safe.
+ */
+export async function runAllJobsOnce() {
+  const results: Record<string, string> = {};
+  for (const [name, fn] of [
+    ['attendance', () => runAttendanceReminders()],
+    ['countdown', runMeetingCountdown],
+    ['dues', runDuesReminder],
+    ['practice', runFrenchPracticeReminder],
+  ] as const) {
+    try { await fn(); results[name] = 'ok'; }
+    catch (err: any) { results[name] = `error: ${err?.message ?? err}`; }
+  }
+  return results;
+}

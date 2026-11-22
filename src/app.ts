@@ -18,6 +18,7 @@ import attendanceRouter from './modules/attendance/attendance.router';
 import notificationsRouter from './modules/notifications/notifications.router';
 import settingsRouter      from './modules/settings/settings.router';
 import { errorHandler }    from './middleware/error.middleware';
+import { runAllJobsOnce }   from './jobs';
 
 const app = express();
 
@@ -46,6 +47,16 @@ app.use('/notifications', notificationsRouter);
 app.use('/settings',      settingsRouter);
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+
+// External scheduler hook (free hosting sleeps → node-cron alone can't be trusted).
+// Auth: header "x-jobs-secret" or ?key= must equal JOBS_SECRET.
+app.all('/jobs/tick', async (req, res, next) => {
+  try {
+    const key = req.header('x-jobs-secret') ?? (typeof req.query.key === 'string' ? req.query.key : '');
+    if (!env.JOBS_SECRET || key !== env.JOBS_SECRET) return res.status(401).json({ success: false });
+    return res.json({ success: true, data: await runAllJobsOnce() });
+  } catch (err) { next(err); }
+});
 
 app.use(errorHandler);
 

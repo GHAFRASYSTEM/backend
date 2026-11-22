@@ -40,6 +40,8 @@ const schema = z.object({
   APP_TIMEZONE:          z.string().default('Europe/Paris'),
   // Set to "false" on extra instances so only one runs the cron jobs
   RUN_JOBS:              z.string().default('true'),
+  // Shared secret for POST /jobs/tick (external free scheduler, e.g. cron-job.org)
+  JOBS_SECRET:           z.string().min(16).optional(),
   // Shown as the sender name in emails
   APP_NAME:              z.string().default('GHAFRA'),
 });
