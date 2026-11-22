@@ -16,7 +16,7 @@ const MESSAGES = [
 
 export async function runFrenchPracticeReminder() {
   const now = zonedNow();
-  if (now.hour < 19 || now.hour >= 22) return;   // evening nudge, 19:00–22:00
+  if (now.hour < 18 || now.hour >= 22) return;   // evening nudge (sent by the 19:00 tick)
   const msg = seededPick(`practice:${now.date}`, MESSAGES);
   await notify({
     category: 'french_practice',

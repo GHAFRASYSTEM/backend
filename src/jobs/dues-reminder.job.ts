@@ -11,7 +11,7 @@ export async function runDuesReminder() {
   const now = zonedNow();
   const daysLeft = daysInMonth(now.year, now.month) - now.day;   // 2, 1, 0 on the last 3 days
   if (daysLeft > 2) return;
-  if (now.hour < 10 || now.hour >= 21) return;   // send in the day, from 10:00
+  if (now.hour < 9 || now.hour >= 21) return;    // daytime only, from 09:00
 
   const monthName = new Date(Date.UTC(now.year, now.month - 1, 1))
     .toLocaleString('en-GB', { month: 'long', timeZone: 'UTC' });

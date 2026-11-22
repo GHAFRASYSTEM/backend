@@ -54,7 +54,11 @@ app.all('/jobs/tick', async (req, res, next) => {
   try {
     const key = req.header('x-jobs-secret') ?? (typeof req.query.key === 'string' ? req.query.key : '');
     if (!env.JOBS_SECRET || key !== env.JOBS_SECRET) return res.status(401).json({ success: false });
-    return res.json({ success: true, data: await runAllJobsOnce() });
+    // Answer right away (free schedulers time out after ~30 s), then do the work
+    res.status(202).json({ success: true, data: { started: true } });
+    runAllJobsOnce()
+      .then(r => console.log('[jobs/tick]', JSON.stringify(r)))
+      .catch(err => console.error('[jobs/tick] failed:', err?.message ?? err));
   } catch (err) { next(err); }
 });
 

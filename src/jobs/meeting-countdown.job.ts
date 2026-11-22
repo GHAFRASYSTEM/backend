@@ -14,7 +14,7 @@ import {
 } from './time';
 
 const WINDOW_START = 9 * 60;    // 09:00
-const WINDOW_END   = 20 * 60;   // 20:00 — latest random slot
+const WINDOW_END   = 19 * 60;   // 19:00 — latest random slot (last external tick runs at 19:00)
 const SEND_UNTIL   = 21 * 60;   // don't send a missed slot after 21:00
 const MEETING_DAY_AT = 8 * 60;  // 08:00
 
