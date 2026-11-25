@@ -280,8 +280,8 @@ function matchesStatus(rowStatus: HistoryStatus, filter?: 'attended' | 'unavaila
 
 export const attendanceService = {
 
-  // Validate window + code + geofence, insert record; conflict on duplicate.
-  // The code check comes before the geofence so a wrong code never reveals distance.
+  // Validate window + geofence + GPS accuracy, insert record; conflict on duplicate.
+  // Location is the only proof of presence — no room code is needed.
   async checkIn(userId: string, input: CheckInInput) {
     const { data: meeting, error: meetingError } = await supabase
       .from(MEETINGS)
@@ -293,7 +293,6 @@ export const attendanceService = {
     if (!meeting) throw Errors.notFound('Meeting');
 
     assertCheckInOpen(meeting);
-    if (input.check_in_code !== meeting.check_in_code) throw Errors.badRequest('Invalid check-in code');
     const distance = assertWithinGeofence(meeting, input);
 
     const { data, error } = await supabase

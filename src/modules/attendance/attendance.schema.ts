@@ -1,9 +1,12 @@
 import { z } from 'zod';
 
-// accuracy is the GPS accuracy the phone reports, in metres
+// The phone only sends where the member is; the server decides whether the
+// check-in is valid (meeting open today, time window, geofence, GPS accuracy).
+// accuracy is the GPS accuracy the phone reports, in metres.
+// check_in_code is accepted from older app versions but no longer required.
 export const CheckInSchema = z.object({
   meeting_id: z.uuid(),
-  check_in_code: z.string().trim().toUpperCase().min(1).max(32),
+  check_in_code: z.string().trim().max(32).optional(),
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
   accuracy: z.number().positive().max(100000),
