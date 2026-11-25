@@ -48,6 +48,27 @@ app.use('/settings',      settingsRouter);
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
+// Crash/error reports from the mobile app (no auth: errors can happen before
+// sign-in). Small payloads, rate-limited per IP; written to the server log.
+const errorHits = new Map<string, { n: number; at: number }>();
+app.post('/client-errors', (req, res) => {
+  const ip = req.ip ?? 'unknown';
+  const now = Date.now();
+  const hit = errorHits.get(ip);
+  if (hit && now - hit.at < 60_000) {
+    if (++hit.n > 30) return res.status(429).end();
+  } else errorHits.set(ip, { n: 1, at: now });
+
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const clip = (v: unknown, n: number) => (typeof v === 'string' ? v.slice(0, n) : undefined);
+  console.error('[client-error]', JSON.stringify({
+    message: clip(b.message, 1000), source: clip(b.source, 40), isFatal: !!b.isFatal,
+    platform: clip(b.platform, 20), osVersion: clip(b.osVersion, 20), appVersion: clip(b.appVersion, 20),
+    stack: clip(b.stack, 4000),
+  }));
+  return res.status(204).end();
+});
+
 // External scheduler hook (free hosting sleeps → node-cron alone can't be trusted).
 // Auth: header "x-jobs-secret" or ?key= must equal JOBS_SECRET.
 app.all('/jobs/tick', async (req, res, next) => {

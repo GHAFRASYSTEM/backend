@@ -16,3 +16,10 @@ describe('/jobs/tick', () => {
     expect((await request(app).get('/jobs/tick?key=wrong-secret-value')).status).toBe(401);
   });
 });
+
+describe('POST /client-errors', () => {
+  it('accepts a crash report without auth', async () => {
+    const res = await request(app).post('/client-errors').send({ message: 'boom', source: 'test', platform: 'ios' });
+    expect(res.status).toBe(204);
+  });
+});
